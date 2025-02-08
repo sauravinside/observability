@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AWS Monitoring Setup</title>
+</head>
+<body>
+    <h1>Configure Monitoring</h1>
+    <form id="monitoringForm">
+        EC2 Instance ID: <input type="text" id="instanceId" name="instanceId" value="i-xxxxxxxxxxxxxxxxx"><br>
+        Alert Threshold (%): <input type="number" id="threshold" name="threshold" value="80"><br>
+        <button type="submit">Deploy</button>
+    </form>
+
+    <script>
+        const form = document.getElementById('monitoringForm');
+        form.addEventListener('submit', (event) => {
+            event.preventDefault();
+            const instanceId = document.getElementById('instanceId').value;
+            const threshold = document.getElementById('threshold').value;
+
+            fetch('/api/configure', {  // Points to your backend API endpoint
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ instanceId, threshold }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+            })
+            .catch(error => {
+                alert('Error: ' + error);
+            });
+        });
+    </script>
+</body>
+</html>
