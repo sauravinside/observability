@@ -7,7 +7,7 @@ sudo apt update
 sudo apt install -y unzip wget
 
 # Install Python 3 and pip
-sudo apt install -y python3 python3-pip
+sudo apt install -y python3 python3-pip python3-flask-cors
 
 # Install required Python packages (using apt with deadsnakes PPA)
 sudo add-apt-repository -y --no-interaction ppa:deadsnakes/ppa
@@ -23,6 +23,9 @@ sudo mv terraform /usr/local/bin/
 curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
 unzip awscliv2.zip
 sudo ./aws/install
+echo 'export AWS_ACCESS_KEY_ID="AKIAS4T6KVMBEEX7O26P"' >> ~/.bashrc
+echo 'export AWS_SECRET_ACCESS_KEY="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"' >> ~/.bashrc
+source ~/.bashrc
 
 # Install Nginx
 sudo apt install -y nginx

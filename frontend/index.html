@@ -1,38 +1,82 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
     <title>AWS Monitoring Setup</title>
+    <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-    <h1>Configure Monitoring</h1>
-    <form id="monitoringForm">
-        EC2 Instance ID: <input type="text" id="instanceId" name="instanceId" value="i-xxxxxxxxxxxxxxxxx"><br>
-        Alert Threshold (%): <input type="number" id="threshold" name="threshold" value="80"><br>
-        <button type="submit">Deploy</button>
-    </form>
+    <div class="container">
+        <div class="setup-wizard">
+            <h1>AWS Monitoring Setup Wizard</h1>
+            
+            <!-- Step 1: Region Selection -->
+            <div class="step" id="step1">
+                <h2>Step 1: Select Region</h2>
+                <select id="region" name="region" required>
+                    <option value="">Select AWS Region</option>
+                </select>
+            </div>
 
-    <script>
-        const form = document.getElementById('monitoringForm');
-        form.addEventListener('submit', (event) => {
-            event.preventDefault();
-            const instanceId = document.getElementById('instanceId').value;
-            const threshold = document.getElementById('threshold').value;
+            <!-- Step 2: Instance Selection -->
+            <div class="step" id="step2" style="display: none;">
+                <h2>Step 2: Select Instances</h2>
+                <div class="instance-list" id="instanceList">
+                    <!-- Instances will be populated here -->
+                </div>
+            </div>
 
-            fetch('/api/configure', {  // Points to your backend API endpoint
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ instanceId, threshold }),
-            })
-            .then(response => response.json())
-            .then(data => {
-                alert(data.message);
-            })
-            .catch(error => {
-                alert('Error: ' + error);
-            });
-        });
-    </script>
+            <!-- Step 3: Metrics Selection -->
+            <div class="step" id="step3" style="display: none;">
+                <h2>Step 3: Select Metrics to Monitor</h2>
+                <div class="metrics-grid">
+                    <div class="metric-item">
+                        <input type="checkbox" id="CPUUtilization" name="metrics" value="CPUUtilization">
+                        <label for="CPUUtilization">CPU Utilization</label>
+                    </div>
+                    <div class="metric-item">
+                        <input type="checkbox" id="MemoryUtilization" name="metrics" value="MemoryUtilization">
+                        <label for="MemoryUtilization">Memory Utilization</label>
+                    </div>
+                    <div class="metric-item">
+                        <input type="checkbox" id="DiskSpaceUtilization" name="metrics" value="DiskSpaceUtilization">
+                        <label for="DiskSpaceUtilization">Disk Space Utilization</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 4: Alert Configuration -->
+            <div class="step" id="step4" style="display: none;">
+                <h2>Step 4: Configure Alerts</h2>
+                <div class="alert-config">
+                    <div class="enable-alerts">
+                        <input type="checkbox" id="enableAlerts" name="enableAlerts">
+                        <label for="enableAlerts">Enable CloudWatch Alerts</label>
+                    </div>
+                    <div id="thresholds" style="display: none;">
+                        <!-- Thresholds will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Navigation Buttons -->
+            <div class="navigation-buttons">
+                <button id="prevBtn" onclick="prevStep()" style="display: none;">Previous</button>
+                <button id="nextBtn" onclick="nextStep()">Next</button>
+                <button id="submitBtn" onclick="submitConfiguration()" style="display: none;">Deploy Monitoring</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Result Modal -->
+    <div id="resultModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Setup Complete!</h2>
+            <div id="modalContent"></div>
+        </div>
+    </div>
+
+    <script src="js/script.js"></script>
 </body>
 </html>
