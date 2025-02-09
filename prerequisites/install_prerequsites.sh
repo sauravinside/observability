@@ -23,12 +23,55 @@ sudo mv terraform /usr/local/bin/
 curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
 unzip awscliv2.zip
 sudo ./aws/install
-echo 'export AWS_ACCESS_KEY_ID="AKIAS4T6KVMBEEX7O26P"' >> ~/.bashrc
-echo 'export AWS_SECRET_ACCESS_KEY="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"' >> ~/.bashrc
-source ~/.bashrc
 
 # Install Nginx
 sudo apt install -y nginx
+
+# Install CloudWatch agent
+wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+sudo dpkg -i -E ./amazon-cloudwatch-agent.deb
+
+# Create CloudWatch agent configuration
+sudo mkdir -p /opt/aws/amazon-cloudwatch-agent/etc
+sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json > /dev/null << 'EOF'
+{
+    "agent": {
+        "metrics_collection_interval": 60,
+        "run_as_user": "root"
+    },
+    "metrics": {
+        "namespace": "CWAgent",
+        "metrics_collected": {
+            "mem": {
+                "measurement": [
+                    {"name": "mem_used_percent", "rename": "MemoryUtilization"}
+                ],
+                "metrics_collection_interval": 60
+            },
+            "disk": {
+                "measurement": [
+                    {"name": "disk_used_percent", "rename": "DiskSpaceUtilization"}
+                ],
+                "resources": ["/"],
+                "metrics_collection_interval": 60
+            }
+        },
+        "append_dimensions": {
+            "InstanceId": "${aws:InstanceId}"
+        }
+    }
+}
+EOF
+
+# Start CloudWatch agent
+sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+sudo systemctl start amazon-cloudwatch-agent
+sudo systemctl enable amazon-cloudwatch-agent
+
+# Clean up installation files
+rm amazon-cloudwatch-agent.deb
+
+echo "CloudWatch agent installed and configured for memory and disk metrics."
 
 # Create project directories (if they don't exist)
 mkdir -p aws-monitoring-tool/frontend aws-monitoring-tool/backend aws-monitoring-tool/terraform
@@ -40,8 +83,8 @@ touch aws-monitoring-tool/frontend/index.html aws-monitoring-tool/backend/app.py
 mkdir -p ~/.aws  # Ensure.aws directory exists
 cat << EOF > ~/.aws/credentials
 [default]  # Or your profile name
-aws_access_key_id = YOUR_AWS_ACCESS_KEY_ID  # REPLACE WITH YOUR KEY
-aws_secret_access_key = YOUR_AWS_SECRET_ACCESS_KEY # REPLACE WITH YOUR SECRET
+aws_access_key_id = AKIAS4T6KVMBEEX7O26P  # REPLACE WITH YOUR KEY
+aws_secret_access_key = HvGtLSIHrXCKOftfnW46riCd8OawQoQ3AuSdTCfv # REPLACE WITH YOUR SECRET
 EOF
 
 echo "export AWS_PROFILE=\"default\"" >> ~/.bashrc

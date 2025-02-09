@@ -201,8 +201,28 @@ def configure_monitoring() -> Dict:
         x_pos = 0
         y_pos = 0
         
+        metric_configs = {
+            'CPUUtilization': {
+                'namespace': 'AWS/EC2',
+                'stat': 'Average'
+            },
+            'MemoryUtilization': {
+                'namespace': 'CWAgent',
+                'stat': 'Average'
+            },
+            'DiskSpaceUtilization': {
+                'namespace': 'CWAgent',
+                'stat': 'Average'
+            }
+        }
+        
         for instance_id in instance_ids:
             for metric in metrics:
+                config = metric_configs.get(metric, {
+                    'namespace': 'AWS/EC2',
+                    'stat': 'Average'
+                })
+                
                 widgets.append({
                     "type": "metric",
                     "x": x_pos,
@@ -210,9 +230,9 @@ def configure_monitoring() -> Dict:
                     "width": 8,
                     "height": 6,
                     "properties": {
-                        "metrics": [["AWS/EC2", metric, "InstanceId", instance_id]],
+                        "metrics": [[config['namespace'], metric, "InstanceId", instance_id]],
                         "period": 300,
-                        "stat": "Average",
+                        "stat": config['stat'],
                         "region": region,
                         "title": f"{instance_id} - {metric}"
                     }

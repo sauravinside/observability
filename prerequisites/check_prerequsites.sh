@@ -30,6 +30,16 @@ fi
 
 echo ""
 
+# Check Flask-CORS
+echo "Checking Flask-CORS:"
+if python3 -c "import flask_cors; print('Flask-CORS is installed')" 2>/dev/null; then
+  echo "Flask-CORS is installed."
+else
+  echo "Flask-CORS is NOT installed."
+fi
+
+echo ""
+
 # Check boto3
 echo "Checking boto3:"
 if python3 -c "import boto3; print(boto3.__version__)" 2>/dev/null; then
