@@ -29,7 +29,16 @@ AWS_SERVICES = {
         'list_function': 'describe_instances',
         'metrics': [
             {'name': 'CPUUtilization', 'namespace': 'AWS/EC2'},
-            {'name': 'DiskSpaceUtilization', 'namespace': 'CWAgent', 'dimension': {'Name': 'InstanceId', 'Value': '${aws:InstanceId}'}},
+            {
+                'name': 'DiskSpaceUtilization',
+                'namespace': 'CWAgent',
+                'dimensions': [
+                    {'Name': 'InstanceId', 'Value': '${aws:InstanceId}'},
+                    {'Name': 'path', 'Value': '/'},
+                    {'Name': 'device', 'Value': 'xvda1'},
+                    {'Name': 'fstype', 'Value': 'ext4'}
+                ]
+            },
             {'name': 'MemoryUtilization', 'namespace': 'CWAgent'},
             {'name': 'NetworkIn', 'namespace': 'AWS/EC2'},
             {'name': 'NetworkOut', 'namespace': 'AWS/EC2'}
@@ -422,8 +431,9 @@ def configure_monitoring() -> Dict:
                 if metric['namespace'] == 'CWAgent':
                     dimensions = [{'Name': 'InstanceId', 'Value': resource_id}]
                     if metric['name'] == 'DiskSpaceUtilization':
-                        dimensions.append({'Name': 'MountPath', 'Value': '/'})  # Adjust as needed
-                        dimensions.append({'Name': 'Filesystem', 'Value': 'xvda1'})  # Adjust filesystem type
+                        dimensions.append({'Name': 'path', 'Value': '/'})  # Adjust as needed
+                        dimensions.append({'Name': 'device', 'Value': 'xvda1'})  # Adjust filesystem type
+                        dimensions.append({'Name': 'fstype', 'Value': 'ext4'})  # Adjust as needed
 
                 widgets.append({
                     "type": "metric",
