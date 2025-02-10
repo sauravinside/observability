@@ -1,93 +1,56 @@
 #!/bin/bash
+# This script checks whether all prerequisites are installed.
 
-# Check Python 3
-echo "Checking Python 3:"
-if command -v python3 &>/dev/null; then
-  python3 --version
-else
-  echo "Python 3 is NOT installed."
+echo "Checking prerequisites..."
+
+# Check for python3
+if! command -v python3 &> /dev/null; then
+    echo "python3 is not installed. Please install python3."
+    exit 1
 fi
 
-echo ""  # Add a newline for better formatting
-
-# Check pip3
-echo "Checking pip3:"
-if command -v pip3 &>/dev/null; then
-  pip3 --version
-else
-  echo "pip3 is NOT installed."
+# Check for pip3
+if! command -v pip3 &> /dev/null; then
+    echo "pip3 is not installed. Please install pip3."
+    exit 1
 fi
 
-echo ""
+# Check for required Python packages
+missing_packages=()
+for package in flask boto3 flask_cors; do
+    python3 -c "import $package" 2>/dev/null
+    if [ $? -ne 0 ]; then
+        missing_packages+=($package)
+    fi
+done
 
-# Check Flask
-echo "Checking Flask:"
-if python3 -c "import flask; print(flask.__version__)" 2>/dev/null; then
-  python3 -c "import flask; print(flask.__version__)"
-else
-  echo "Flask is NOT installed."
+if [ ${#missing_packages[@]} -ne 0 ]; then
+    echo "The following Python packages are missing: ${missing_packages[@]}"
+    exit 1
 fi
 
-echo ""
-
-# Check Flask-CORS
-echo "Checking Flask-CORS:"
-if python3 -c "import flask_cors; print('Flask-CORS is installed')" 2>/dev/null; then
-  echo "Flask-CORS is installed."
-else
-  echo "Flask-CORS is NOT installed."
+# Check for Terraform
+if! command -v terraform &> /dev/null; then
+    echo "Terraform is not installed. Please install Terraform."
+    exit 1
 fi
 
-echo ""
-
-# Check boto3
-echo "Checking boto3:"
-if python3 -c "import boto3; print(boto3.__version__)" 2>/dev/null; then
-  python3 -c "import boto3; print(boto3.__version__)"
-else
-  echo "boto3 is NOT installed."
+# Check for AWS CLI
+if! command -v aws &> /dev/null; then
+    echo "AWS CLI is not installed. Please install AWS CLI."
+    exit 1
 fi
 
-echo ""
-
-# Check Terraform
-echo "Checking Terraform:"
-if command -v terraform &>/dev/null; then
-  terraform --version
-else
-  echo "Terraform is NOT installed."
+# Check for Nginx
+if! command -v nginx &> /dev/null; then
+    echo "Nginx is not installed. Please install Nginx."
+    exit 1
 fi
 
-echo ""
-
-# Check AWS CLI
-echo "Checking AWS CLI:"
-if command -v aws &>/dev/null; then
-  aws --version
-else
-  echo "AWS CLI is NOT installed."
+# Check for CloudWatch agent
+if! command -v /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl &> /dev/null; then
+    echo "CloudWatch agent is not installed. Please install the CloudWatch agent."
+    exit 1
 fi
 
-echo ""
-
-# Check Nginx
-echo "Checking Nginx:"
-if command -v nginx &>/dev/null; then
-  nginx -v
-else
-  echo "Nginx is NOT installed."
-fi
-
-echo ""
-
-# Check if AWS credentials file exists
-echo "Checking AWS Credentials file:"
-if [ -f ~/.aws/credentials ]; then
-  echo "AWS credentials file exists."
-else
-  echo "AWS credentials file DOES NOT exist."
-fi
-
-echo ""
-
-echo "Prerequisite checks complete."
+echo "All prerequisites are met."

@@ -1,145 +1,185 @@
 let currentStep = 1;
 const totalSteps = 4;
-let selectedInstances = [];
+let selectedResources = [];
 let selectedMetrics = [];
+let availableMetrics = [];
 
-// Initialize the application
-document.addEventListener('DOMContentLoaded', () => {
-    fetchRegions();
-    setupEventListeners();
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        await Promise.all([
+            fetchServices(),
+            fetchRegions()
+        ]);
+        setupEventListeners();
+    } catch (error) {
+        showError('Failed to initialize application: ' + error.message);
+    }
 });
 
 function setupEventListeners() {
-    // Region change listener
+    document.getElementById('service').addEventListener('change', handleServiceChange);
     document.getElementById('region').addEventListener('change', handleRegionChange);
-    
-    // Metrics change listener
-    document.querySelectorAll('input[name="metrics"]').forEach(checkbox => {
-        checkbox.addEventListener('change', handleMetricsChange);
-    });
-    
-    // Alerts toggle listener
     document.getElementById('enableAlerts').addEventListener('change', handleAlertsToggle);
-    
-    // Modal close button
-    document.querySelector('.close').addEventListener('click', () => {
-        document.getElementById('resultModal').style.display = 'none';
+    document.querySelector('.close').addEventListener('click', closeModal);
+    document.getElementById('prevBtn').addEventListener('click', prevStep);
+    document.getElementById('nextBtn').addEventListener('click', nextStep);
+    document.getElementById('submitBtn').addEventListener('click', submitConfiguration);
+}
+
+async function fetchServices() {
+    const response = await fetch('/api/services');
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const services = await response.json();
+    populateSelect('service', services);
+}
+
+async function fetchRegions() {
+    const response = await fetch('/api/regions');
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const regions = await response.json();
+    populateSelect('region', regions);
+}
+
+function populateSelect(elementId, items) {
+    const select = document.getElementById(elementId);
+    select.innerHTML = `<option value="">Select ${elementId.charAt(0).toUpperCase() + elementId.slice(1)}</option>`;
+    items.forEach(item => {
+        const option = document.createElement('option');
+        option.value = item;
+        option.textContent = item;
+        select.appendChild(option);
     });
 }
 
-// Fetch available AWS regions
-async function fetchRegions() {
+async function handleServiceChange() {
+    const service = document.getElementById('service').value;
+    if (!service) return;
+
     try {
-        const response = await fetch('/api/regions');
-        
-        // Check if response is successful
+        const response = await fetch(`/api/metrics/${service}`);
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Failed to fetch regions');
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
-
-        const regions = await response.json();
-        
-        // Add validation for array type
-        if (!Array.isArray(regions)) {
-            throw new Error('Invalid regions data received');
-        }
-
-        const regionSelect = document.getElementById('region');
-        regionSelect.innerHTML = '<option value="">Select AWS Region</option>';
-        
-        regions.forEach(region => {
-            const option = document.createElement('option');
-            option.value = region;
-            option.textContent = region;
-            regionSelect.appendChild(option);
-        });
+        availableMetrics = await response.json();
+        updateMetricsGrid();
     } catch (error) {
-        showError('Failed to fetch regions: ' + error.message);
+        showError('Failed to fetch metrics: ' + error.message);
     }
 }
 
-// Handle region selection change
-async function handleRegionChange(event) {
-    const region = event.target.value;
-    if (!region) return;
+async function handleRegionChange() {
+    const service = document.getElementById('service').value;
+    const region = document.getElementById('region').value;
+    if (!service || !region) return;
 
     try {
-        const response = await fetch(`/api/instances/${region}`);
-        const instances = await response.json();
-        
-        const instanceList = document.getElementById('instanceList');
-        instanceList.innerHTML = '';
-        
-        instances.forEach(instance => {
-            const div = document.createElement('div');
-            div.className = 'instance-item';
-            div.innerHTML = `
-                <input type="checkbox" id="${instance.InstanceId}" value="${instance.InstanceId}">
-                <label for="${instance.InstanceId}">
-                    ${instance.Name || 'Unnamed'} (${instance.InstanceId})
-                    <span class="instance-type">${instance.Type}</span>
-                </label>
-            `;
-            instanceList.appendChild(div);
-        });
-
-        // Add instance selection listeners
-        instanceList.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
-            checkbox.addEventListener('change', () => {
-                if (checkbox.checked) {
-                    selectedInstances.push(checkbox.value);
-                } else {
-                    selectedInstances = selectedInstances.filter(id => id !== checkbox.value);
-                }
-                updateNavigationButtons();
-            });
-        });
+        const response = await fetch(`/api/resources/${service}/${region}`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const resources = await response.json();
+        updateResourceList(resources);
     } catch (error) {
-        showError('Failed to fetch instances: ' + error.message);
+        showError('Failed to fetch resources: ' + error.message);
     }
 }
 
-// Handle metrics selection change
-function handleMetricsChange(event) {
+function updateMetricsGrid() {
+    const metricsGrid = document.getElementById('metricsGrid');
+    metricsGrid.innerHTML = '';
+    
+    availableMetrics.forEach(metric => {
+        const div = document.createElement('div');
+        div.className = 'metric-item';
+        div.innerHTML = `
+            <input type="checkbox" id="${metric.name}" name="metrics" value="${metric.name}"
+                   ${selectedMetrics.some(m => m.name === metric.name) ? 'checked' : ''}>
+            <label for="${metric.name}">${metric.name}</label>
+        `;
+        div.querySelector('input').addEventListener('change', (e) => handleMetricSelection(e, metric));
+        metricsGrid.appendChild(div);
+    });
+}
+
+function handleMetricSelection(event, metric) {
     if (event.target.checked) {
-        selectedMetrics.push(event.target.value);
+        selectedMetrics.push({
+            name: metric.name,
+            namespace: metric.namespace
+        });
     } else {
-        selectedMetrics = selectedMetrics.filter(metric => metric !== event.target.value);
+        selectedMetrics = selectedMetrics.filter(m => m.name !== metric.name);
     }
     updateNavigationButtons();
 }
 
-// Handle alerts toggle
+function updateResourceList(resources) {
+    const resourceList = document.getElementById('resourceList');
+    resourceList.innerHTML = '';
+    
+    resources.forEach(resource => {
+        const div = document.createElement('div');
+        div.className = 'resource-item';
+        div.innerHTML = `
+            <input type="checkbox" id="${resource.Id}" value="${resource.Id}"
+                   ${selectedResources.includes(resource.Id) ? 'checked' : ''}>
+            <label for="${resource.Id}">
+                ${resource.Name}
+                <span class="resource-info">${resource.Id} - ${resource.Type}</span>
+            </label>
+        `;
+        div.querySelector('input').addEventListener('change', (e) => handleResourceSelection(e, resource.Id));
+        resourceList.appendChild(div);
+    });
+}
+
+function handleResourceSelection(event, resourceId) {
+    if (event.target.checked) {
+        selectedResources.push(resourceId);
+    } else {
+        selectedResources = selectedResources.filter(id => id !== resourceId);
+    }
+    updateNavigationButtons();
+}
+
 function handleAlertsToggle(event) {
     const thresholdsDiv = document.getElementById('thresholds');
     thresholdsDiv.style.display = event.target.checked ? 'block' : 'none';
     
     if (event.target.checked) {
-        thresholdsDiv.innerHTML = '';
-        selectedMetrics.forEach(metric => {
-            const container = document.createElement('div');
-            container.className = 'slider-container';
-            container.innerHTML = `
-                <label for="${metric}-threshold">${metric} Threshold (%)</label>
-                <input type="range" id="${metric}-threshold" 
-                       min="0" max="100" value="80" 
-                       class="threshold-slider">
-                <span class="threshold-value">80%</span>
-            `;
-            thresholdsDiv.appendChild(container);
-
-            // Add slider value update listener
-            const slider = container.querySelector('input[type="range"]');
-            const valueDisplay = container.querySelector('.threshold-value');
-            slider.addEventListener('input', () => {
-                valueDisplay.textContent = `${slider.value}%`;
-            });
-        });
+        updateThresholdsDisplay();
     }
 }
 
-// Navigation functions
+function updateThresholdsDisplay() {
+    const thresholdsDiv = document.getElementById('thresholds');
+    thresholdsDiv.innerHTML = '';
+    
+    selectedMetrics.forEach(metric => {
+        const container = document.createElement('div');
+        container.className = 'slider-container';
+        container.innerHTML = `
+            <label for="${metric.name}-threshold">${metric.name} Threshold (%)</label>
+            <input type="range" id="${metric.name}-threshold" 
+                   min="0" max="100" value="80" 
+                   class="threshold-slider">
+            <span class="threshold-value">80%</span>
+        `;
+        
+        const slider = container.querySelector('input');
+        const valueDisplay = container.querySelector('.threshold-value');
+        slider.addEventListener('input', () => {
+            valueDisplay.textContent = `${slider.value}%`;
+        });
+        
+        thresholdsDiv.appendChild(container);
+    });
+}
+
 function nextStep() {
     if (validateCurrentStep()) {
         document.getElementById(`step${currentStep}`).style.display = 'none';
@@ -157,22 +197,18 @@ function prevStep() {
 }
 
 function updateNavigationButtons() {
-    const prevBtn = document.getElementById('prevBtn');
-    const nextBtn = document.getElementById('nextBtn');
-    const submitBtn = document.getElementById('submitBtn');
-    
-    prevBtn.style.display = currentStep > 1 ? 'block' : 'none';
-    nextBtn.style.display = currentStep < totalSteps ? 'block' : 'none';
-    submitBtn.style.display = currentStep === totalSteps ? 'block' : 'none';
+    document.getElementById('prevBtn').style.display = currentStep > 1 ? 'block' : 'none';
+    document.getElementById('nextBtn').style.display = currentStep < totalSteps ? 'block' : 'none';
+    document.getElementById('submitBtn').style.display = currentStep === totalSteps ? 'block' : 'none';
 }
 
-// Validate current step
 function validateCurrentStep() {
     switch (currentStep) {
         case 1:
-            return document.getElementById('region').value !== '';
+            return document.getElementById('service').value && 
+                   document.getElementById('region').value;
         case 2:
-            return selectedInstances.length > 0;
+            return selectedResources.length > 0;
         case 3:
             return selectedMetrics.length > 0;
         default:
@@ -180,26 +216,22 @@ function validateCurrentStep() {
     }
 }
 
-// Submit configuration
 async function submitConfiguration() {
-    const region = document.getElementById('region').value;
-    const enableAlerts = document.getElementById('enableAlerts').checked;
-    
-    const thresholds = {};
-    if (enableAlerts) {
+    const config = {
+        service: document.getElementById('service').value,
+        region: document.getElementById('region').value,
+        resources: selectedResources,
+        metrics: selectedMetrics,
+        alerts: document.getElementById('enableAlerts').checked,
+        thresholds: {}
+    };
+
+    if (config.alerts) {
         selectedMetrics.forEach(metric => {
-            const threshold = document.getElementById(`${metric}-threshold`).value;
-            thresholds[metric] = threshold;
+            const threshold = document.getElementById(`${metric.name}-threshold`).value;
+            config.thresholds[metric.name] = threshold;
         });
     }
-
-    const config = {
-        region: region,
-        instanceIds: selectedInstances,
-        metrics: selectedMetrics,
-        alerts: enableAlerts,
-        thresholds: thresholds
-    };
 
     try {
         const response = await fetch('/api/configure', {
@@ -210,19 +242,18 @@ async function submitConfiguration() {
             body: JSON.stringify(config)
         });
 
-        const result = await response.json();
-        
-        if (result.error) {
-            showError(result.error);
-        } else {
-            showSuccess(result);
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to configure monitoring');
         }
+
+        const result = await response.json();
+        showSuccess(result);
     } catch (error) {
-        showError('Failed to submit configuration: ' + error.message);
+        showError('Failed to configure monitoring: ' + error.message);
     }
 }
 
-// Show error message
 function showError(message) {
     const modal = document.getElementById('resultModal');
     const content = document.getElementById('modalContent');
@@ -230,26 +261,30 @@ function showError(message) {
     modal.style.display = 'block';
 }
 
-// Show success message
 function showSuccess(result) {
     const modal = document.getElementById('resultModal');
     const content = document.getElementById('modalContent');
     content.innerHTML = `
         <div class="success-message">
-            <p>Monitoring configuration completed successfully!</p>
-            <p>Dashboard Name: ${result.dashboardName}</p>
-            <p>SNS Topic ARN: ${result.snsTopicArn}</p>
+            <h3>Monitoring configuration completed successfully!</h3>
+            <p><strong>Dashboard Name:</strong> ${result.dashboardName}</p>
+            <p><strong>SNS Topic ARN:</strong> ${result.snsTopicArn}</p>
             <p><strong>Important:</strong> Please add subscribers to the SNS topic "${result.topicName}" to receive alerts.</p>
-            <p><a href="${result.dashboardUrl}" target="_blank">View Dashboard</a></p>
+            <div class="dashboard-link">
+                <a href="${result.dashboardUrl}" target="_blank" class="btn">View Dashboard</a>
+            </div>
         </div>
     `;
     modal.style.display = 'block';
 }
 
-// Window click handler for modal
+function closeModal() {
+    document.getElementById('resultModal').style.display = 'none';
+}
+
 window.onclick = function(event) {
     const modal = document.getElementById('resultModal');
     if (event.target === modal) {
         modal.style.display = 'none';
     }
-}
+};

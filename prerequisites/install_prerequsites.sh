@@ -6,13 +6,18 @@ sudo apt update
 # Install common utilities
 sudo apt install -y unzip wget
 
-# Install Python 3 and pip
-sudo apt install -y python3 python3-pip python3-flask-cors
+# Install Python 3 and pip along with Flask CORS
+sudo apt install -y python3 python3-pip python3-flask-cors python3-paramiko python3-scp
 
 # Install required Python packages (using apt with deadsnakes PPA)
 sudo add-apt-repository -y --no-interaction ppa:deadsnakes/ppa
 sudo apt update
 sudo apt install -y python3-flask python3-boto3
+
+# Additional package installations
+sudo apt install -y awscli python3-boto3 python3-flask-cors \
+    python3-paramiko python3-scp \
+    awscli-plugin-rds awscli-plugin-lambda
 
 # Install Terraform (check for the latest version on HashiCorp's website and update URL)
 wget https://releases.hashicorp.com/terraform/1.6.0/terraform_1.6.0_linux_amd64.zip  # Update version if needed
@@ -80,7 +85,7 @@ mkdir -p aws-monitoring-tool/frontend aws-monitoring-tool/backend aws-monitoring
 touch aws-monitoring-tool/frontend/index.html aws-monitoring-tool/backend/app.py aws-monitoring-tool/terraform/main.tf
 
 # Set up AWS credentials (using profiles - IMPORTANT)
-mkdir -p ~/.aws  # Ensure.aws directory exists
+mkdir -p ~/.aws  # Ensure .aws directory exists
 cat << EOF > ~/.aws/credentials
 [default]  # Or your profile name
 aws_access_key_id = AKIAS4T6KVMBEEX7O26P  # REPLACE WITH YOUR KEY
