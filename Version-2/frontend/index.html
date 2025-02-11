@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AWS Resource Monitoring Setup</title>
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="setup-wizard">
+            <h1>AWS Resource Monitoring Setup</h1>
+            
+            <!-- Step 1: Service & Region Selection -->
+            <div class="step" id="step1">
+                <h2>Step 1: Select Service & Region</h2>
+                <div class="form-group">
+                    <label for="service">AWS Service</label>
+                    <select id="service" name="service" required>
+                        <option value="">Select AWS Service</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="region">AWS Region</label>
+                    <select id="region" name="region" required>
+                        <option value="">Select AWS Region</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Step 2: Resource Selection -->
+            <div class="step" id="step2" style="display: none;">
+                <h2>Step 2: Select Resources</h2>
+                <div class="resource-list" id="resourceList">
+                    <!-- Resources will be populated dynamically -->
+                </div>
+            </div>
+
+            <!-- Step 3: Metrics Selection -->
+            <div class="step" id="step3" style="display: none;">
+                <h2>Step 3: Select Metrics to Monitor</h2>
+                <div class="metrics-grid" id="metricsGrid">
+                    <!-- Metrics will be populated dynamically -->
+                </div>
+            </div>
+
+            <!-- Step 4: Alert Configuration -->
+            <div class="step" id="step4" style="display: none;">
+                <h2>Step 4: Configure Alerts</h2>
+                <div class="alert-config">
+                    <div class="enable-alerts">
+                        <input type="checkbox" id="enableAlerts" name="enableAlerts">
+                        <label for="enableAlerts">Enable CloudWatch Alerts</label>
+                    </div>
+                    <div id="thresholds" style="display: none;">
+                        <!-- Thresholds will be populated dynamically -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Navigation Buttons -->
+            <div class="navigation-buttons">
+                <button id="prevBtn" style="display: none;">Previous</button>
+                <button id="nextBtn">Next</button>
+                <button id="submitBtn" style="display: none;">Deploy Monitoring</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Result Modal -->
+    <div id="resultModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <div id="modalContent"></div>
+        </div>
+    </div>
+
+    <script src="/js/script.js"></script>
+</body>
+</html>

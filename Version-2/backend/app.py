@@ -14,7 +14,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+
 
 # Get the frontend directory path
 FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'frontend')
@@ -160,6 +161,13 @@ AWS_SERVICES = {
     }
 }
 
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    return response
+    
 def setup_nginx() -> None:
     """Setup nginx, frontend files, and reverse proxy configuration"""
     try:
@@ -204,11 +212,16 @@ def setup_nginx() -> None:
         logger.error(f"Error setting up nginx: {str(e)}")
         raise
 
-def create_aws_client(service: str, region: str = None) -> boto3.client:
+def create_aws_client(service: str, region: str = None):
+    """Create an AWS client for the given service."""
     try:
-        if region:
-            return boto3.client(service, region_name=region)
-        return boto3.client(service)
+        return boto3.client(service, region_name=region) if region else boto3.client(service)
+    except Exception as e:
+        logger.error(f"Error creating AWS {service} client: {str(e)}")
+        raise
+    """Create an AWS client for the given service."""
+    try:
+        return boto3.client(service, region_name=region) if region else boto3.client(service)
     except Exception as e:
         logger.error(f"Error creating AWS {service} client: {str(e)}")
         raise
@@ -350,9 +363,11 @@ def get_metrics(service: str) -> Dict:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/configure', methods=['POST'])
-def configure_monitoring() -> Dict:
+def configure_monitoring():
     try:
         data = request.get_json()
+        logger.info("Received request for configuration: %s", json.dumps(data, indent=4))  # ✅ Log the received request
+
         if not data:
             return jsonify({'error': 'No data provided'}), 400
 
@@ -368,103 +383,90 @@ def configure_monitoring() -> Dict:
         alerts = data['alerts']
         thresholds = data['thresholds']
 
-        service_config = AWS_SERVICES.get(service)
-        if not service_config:
-            return jsonify({'error': 'Invalid service'}), 400
-
-        sns = create_aws_client('sns', region)
         cloudwatch = create_aws_client('cloudwatch', region)
+        sns = create_aws_client('sns', region)
 
-        # Create SNS topic
-        topic_name = f"{service}_Monitoring_Alerts_{'-'.join(resources)}"
+        # ✅ Log alarm creation
+        logger.info("Creating alarms for resources: %s", resources)
+
+        # ✅ Create SNS topic
+        topic_name = f"{service}_Monitoring_Alerts"
         try:
             topic_response = sns.create_topic(Name=topic_name)
             topic_arn = topic_response['TopicArn']
+            logger.info("SNS topic created: %s", topic_arn)
         except ClientError as e:
-            logger.error(f"Error creating SNS topic: {str(e)}")
+            logger.error("Error creating SNS topic: %s", str(e))
             return jsonify({'error': f'Failed to create SNS topic: {str(e)}'}), 500
 
-        # Create CloudWatch alarms
+        # ✅ Create CloudWatch Alarms
         alarm_arns = []
         if alerts:
             for resource_id in resources:
                 for metric in metrics:
                     try:
-                        alarm_name = f"{resource_id}-{metric['name']}-Alarm"
-                        alarm_config = {
-                            'AlarmName': alarm_name,
-                            'MetricName': metric['name'],
-                            'Namespace': metric['namespace'],
-                            'Statistic': 'Average',
-                            'Period': 300,
-                            'EvaluationPeriods': 2,
-                            'Threshold': float(thresholds[metric['name']]),
-                            'ComparisonOperator': 'GreaterThanThreshold',
-                            'AlarmActions': [topic_arn],
-                            'OKActions': [topic_arn]
-                        }
+                        warning_threshold = float(thresholds[metric['name']]['warning'])
+                        critical_threshold = float(thresholds[metric['name']]['critical'])
 
-                        # Add dimensions based on service and metric
-                        dimensions = [{'Name': service_config['dimension_key'], 'Value': resource_id}]
-                        if 'dimension' in metric:
-                            dimensions.append(metric['dimension'])
-                        alarm_config['Dimensions'] = dimensions
-
-                        cloudwatch.put_metric_alarm(**alarm_config)
-                        alarm_arns.append(alarm_name)
+                        for level, threshold in [('Warning', warning_threshold), ('Critical', critical_threshold)]:
+                            alarm_name = f"{resource_id}-{metric['name']}-{level}-Alarm"
+                            cloudwatch.put_metric_alarm(
+                                AlarmName=alarm_name,
+                                MetricName=metric['name'],
+                                Namespace=metric['namespace'],
+                                Statistic='Average',
+                                Period=300,
+                                EvaluationPeriods=2,
+                                Threshold=threshold,
+                                ComparisonOperator='GreaterThanThreshold',
+                                AlarmActions=[topic_arn],
+                                OKActions=[topic_arn],
+                                Dimensions=[{'Name': 'InstanceId', 'Value': resource_id}]
+                            )
+                            alarm_arns.append(alarm_name)
                     except ClientError as e:
-                        logger.error(f"Error creating alarm for {resource_id}: {str(e)}")
+                        logger.error("Error creating alarm for %s: %s", resource_id, str(e))
                         return jsonify({'error': f'Failed to create alarm for {resource_id}: {str(e)}'}), 500
 
-        # Create CloudWatch dashboard
+        # ✅ Creating the CloudWatch Dashboard
         dashboard_name = f"{service}-Monitor-{'-'.join(resources)}"
         widgets = []
-        x_pos = 0
-        y_pos = 0
 
-        for resource_id in resources:
-            for metric in metrics:
-                dimensions = [{'Name': service_config['dimension_key'], 'Value': resource_id}]
-                if 'dimension' in metric:
-                    dimensions.append(metric['dimension'])
+        for metric in metrics:
+            metric_data = [
+                [metric['namespace'], metric['name']]
+            ]
 
-                if metric['namespace'] == 'CWAgent':
-                    dimensions = [{'Name': 'InstanceId', 'Value': resource_id}]
-                    if metric['name'] == 'DiskSpaceUtilization':
-                        dimensions.append({'Name': 'path', 'Value': '/'})  # Adjust as needed
-                        dimensions.append({'Name': 'device', 'Value': 'xvda1'})  # Adjust filesystem type
-                        dimensions.append({'Name': 'fstype', 'Value': 'ext4'})  # Adjust as needed
+            for resource_id in resources:
+                metric_data.append([
+                    metric['namespace'], metric['name'],
+                    "InstanceId", resource_id
+                ])
 
-                widgets.append({
-                    "type": "metric",
-                    "x": x_pos,
-                    "y": y_pos,
-                    "width": 8,
-                    "height": 6,
-                    "properties": {
-                        "metrics": [[
-                            metric['namespace'],
-                            metric['name'],
-                            *[item for dim in dimensions for item in [dim['Name'], dim['Value']]]
-                        ]],
-                        "period": 300,
-                        "stat": "Average",
-                        "region": region,
-                        "title": f"{resource_id} - {metric['name']}"
-                    }
-                })
-
-                x_pos = (x_pos + 8) % 24
-                if x_pos == 0:
-                    y_pos += 6
+            widgets.append({
+                "type": "metric",
+                "x": 0,
+                "y": len(widgets) * 6,
+                "width": 24,
+                "height": 6,
+                "properties": {
+                    "metrics": metric_data,
+                    "period": 300,
+                    "stat": "Average",
+                    "region": region,
+                    "title": f"{metric['name']} across {len(resources)} instances"
+                }
+            })
 
         try:
+            dashboard_body = json.dumps({"widgets": widgets})
             cloudwatch.put_dashboard(
                 DashboardName=dashboard_name,
-                DashboardBody=json.dumps({"widgets": widgets})
+                DashboardBody=dashboard_body
             )
+            logger.info("Dashboard created successfully: %s", dashboard_name)
         except ClientError as e:
-            logger.error(f"Error creating dashboard: {str(e)}")
+            logger.error("Error creating dashboard: %s", str(e))
             return jsonify({'error': f'Failed to create dashboard: {str(e)}'}), 500
 
         return jsonify({
@@ -477,8 +479,9 @@ def configure_monitoring() -> Dict:
         })
 
     except Exception as e:
-        logger.error(f"Unexpected error in configure_monitoring: {str(e)}")
+        logger.error("Unexpected error in configure_monitoring: %s", str(e))
         return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
+
 
 if __name__ == '__main__':
     try:
