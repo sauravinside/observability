@@ -422,41 +422,38 @@ def configure_monitoring() -> Dict:
         x_pos = 0
         y_pos = 0
 
-        for resource_id in resources:
-            for metric in metrics:
-                dimensions = [{'Name': service_config['dimension_key'], 'Value': resource_id}]
-                if 'dimension' in metric:
-                    dimensions.append(metric['dimension'])
+        widgets = []
+        for metric in metrics:
+            metric_data = [
+                [metric['namespace'], metric['name']]  # First row: Namespace & Metric Name
+            ]
+            for resource_id in resources:
+                dimensions = [[service_config['dimension_key'], resource_id]]
 
                 if metric['namespace'] == 'CWAgent':
-                    dimensions = [{'Name': 'InstanceId', 'Value': resource_id}]
+                    dimensions = [['InstanceId', resource_id]]
                     if metric['name'] == 'DiskSpaceUtilization':
-                        dimensions.append({'Name': 'path', 'Value': '/'})  # Adjust as needed
-                        dimensions.append({'Name': 'device', 'Value': 'xvda1'})  # Adjust filesystem type
-                        dimensions.append({'Name': 'fstype', 'Value': 'ext4'})  # Adjust as needed
-
-                widgets.append({
-                    "type": "metric",
-                    "x": x_pos,
-                    "y": y_pos,
-                    "width": 8,
-                    "height": 6,
-                    "properties": {
-                        "metrics": [[
-                            metric['namespace'],
-                            metric['name'],
-                            *[item for dim in dimensions for item in [dim['Name'], dim['Value']]]
-                        ]],
-                        "period": 300,
-                        "stat": "Average",
-                        "region": region,
-                        "title": f"{resource_id} - {metric['name']}"
-                    }
-                })
-
-                x_pos = (x_pos + 8) % 24
-                if x_pos == 0:
-                    y_pos += 6
+                        dimensions.append(['path', '/'])  # Adjust as needed
+                        dimensions.append(['device', 'xvda1'])
+                        dimensions.append(['fstype', 'ext4'])
+                metric_data.append([
+                    metric['namespace'], metric['name'],
+                    *[item for dim in dimensions for item in [dim[0], dim[1]]]
+                ])
+            widgets.append({
+                "type": "metric",
+                "x": 0,
+                "y": len(widgets) * 6,  # Stack widgets vertically
+                "width": 24,
+                "height": 6,
+                "properties": {
+                    "metrics": metric_data,
+                    "period": 300,
+                    "stat": "Average",
+                    "region": region,
+                    "title": f"{metric['name']} across {len(resources)} instances"
+                }
+            })
 
         try:
             cloudwatch.put_dashboard(
