@@ -350,7 +350,7 @@ def get_metrics(service: str) -> Dict:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/configure', methods=['POST'])
-def configure_monitoring() -> Dict:
+def configure_monitoring():
     try:
         data = request.get_json()
         if not data:
@@ -390,31 +390,61 @@ def configure_monitoring() -> Dict:
             for resource_id in resources:
                 for metric in metrics:
                     try:
-                        alarm_name = f"{resource_id}-{metric['name']}-Alarm"
-                        alarm_config = {
-                            'AlarmName': alarm_name,
+                        # Create dimensions based on service and metric
+                        dimensions = [{'Name': service_config['dimension_key'], 'Value': resource_id}]
+                        if 'dimension' in metric:
+                            dimensions.append(metric['dimension'])
+
+                        if metric['namespace'] == 'CWAgent':
+                            dimensions = [{'Name': 'InstanceId', 'Value': resource_id}]
+                            if metric['name'] == 'DiskSpaceUtilization':
+                                dimensions.extend([
+                                    {'Name': 'path', 'Value': '/'},
+                                    {'Name': 'device', 'Value': 'xvda1'},
+                                    {'Name': 'fstype', 'Value': 'ext4'}
+                                ])
+
+                        # Create Warning Alarm
+                        warning_alarm_name = f"{resource_id}-{metric['name']}-Warning"
+                        warning_alarm_config = {
+                            'AlarmName': warning_alarm_name,
                             'MetricName': metric['name'],
                             'Namespace': metric['namespace'],
                             'Statistic': 'Average',
                             'Period': 300,
                             'EvaluationPeriods': 2,
-                            'Threshold': float(thresholds[metric['name']]),
+                            'Threshold': float(thresholds[metric['name']]['warning']),
                             'ComparisonOperator': 'GreaterThanThreshold',
                             'AlarmActions': [topic_arn],
-                            'OKActions': [topic_arn]
+                            'OKActions': [topic_arn],
+                            'Dimensions': dimensions,
+                            'AlarmDescription': f'Warning threshold exceeded for {metric["name"]} on {resource_id}'
                         }
+                        cloudwatch.put_metric_alarm(**warning_alarm_config)
+                        alarm_arns.append(warning_alarm_name)
 
-                        # Add dimensions based on service and metric
-                        dimensions = [{'Name': service_config['dimension_key'], 'Value': resource_id}]
-                        if 'dimension' in metric:
-                            dimensions.append(metric['dimension'])
-                        alarm_config['Dimensions'] = dimensions
+                        # Create Critical Alarm
+                        critical_alarm_name = f"{resource_id}-{metric['name']}-Critical"
+                        critical_alarm_config = {
+                            'AlarmName': critical_alarm_name,
+                            'MetricName': metric['name'],
+                            'Namespace': metric['namespace'],
+                            'Statistic': 'Average',
+                            'Period': 300,
+                            'EvaluationPeriods': 2,
+                            'Threshold': float(thresholds[metric['name']]['critical']),
+                            'ComparisonOperator': 'GreaterThanThreshold',
+                            'AlarmActions': [topic_arn],
+                            'OKActions': [topic_arn],
+                            'Dimensions': dimensions,
+                            'AlarmDescription': f'Critical threshold exceeded for {metric["name"]} on {resource_id}'
+                        }
+                        cloudwatch.put_metric_alarm(**critical_alarm_config)
+                        alarm_arns.append(critical_alarm_name)
 
-                        cloudwatch.put_metric_alarm(**alarm_config)
-                        alarm_arns.append(alarm_name)
                     except ClientError as e:
-                        logger.error(f"Error creating alarm for {resource_id}: {str(e)}")
-                        return jsonify({'error': f'Failed to create alarm for {resource_id}: {str(e)}'}), 500
+                        logger.error(f"Error creating alarms for {resource_id}: {str(e)}")
+                        return jsonify({'error': f'Failed to create alarms for {resource_id}: {str(e)}'}), 500
 
         # Create CloudWatch dashboard
         dashboard_name = f"{service}-Monitor-{'-'.join(resources)}"

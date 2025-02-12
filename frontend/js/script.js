@@ -161,19 +161,51 @@ function updateThresholdsDisplay() {
     
     selectedMetrics.forEach(metric => {
         const container = document.createElement('div');
-        container.className = 'slider-container';
+        container.className = 'metric-threshold-container';
         container.innerHTML = `
-            <label for="${metric.name}-threshold">${metric.name} Threshold (%)</label>
-            <input type="range" id="${metric.name}-threshold" 
-                   min="0" max="100" value="80" 
-                   class="threshold-slider">
-            <span class="threshold-value">80%</span>
+            <h4 class="metric-name">${metric.name}</h4>
+            <div class="slider-container warning">
+                <label for="${metric.name}-warning">Warning Threshold (%)</label>
+                <input type="range" id="${metric.name}-warning" 
+                       min="0" max="100" value="70" 
+                       class="threshold-slider warning-slider">
+                <span class="threshold-value warning-value">70%</span>
+            </div>
+            <div class="slider-container critical">
+                <label for="${metric.name}-critical">Critical Threshold (%)</label>
+                <input type="range" id="${metric.name}-critical" 
+                       min="0" max="100" value="90" 
+                       class="threshold-slider critical-slider">
+                <span class="threshold-value critical-value">90%</span>
+            </div>
         `;
         
-        const slider = container.querySelector('input');
-        const valueDisplay = container.querySelector('.threshold-value');
-        slider.addEventListener('input', () => {
-            valueDisplay.textContent = `${slider.value}%`;
+        // Add event listeners for both sliders
+        const warningSlider = container.querySelector('.warning-slider');
+        const criticalSlider = container.querySelector('.critical-slider');
+        const warningValue = container.querySelector('.warning-value');
+        const criticalValue = container.querySelector('.critical-value');
+        
+        warningSlider.addEventListener('input', () => {
+            const warning = parseInt(warningSlider.value);
+            const critical = parseInt(criticalSlider.value);
+            if (warning >= critical) {
+                warningSlider.value = critical - 1;
+                warningValue.textContent = `${critical - 1}%`;
+            } else {
+                warningValue.textContent = `${warning}%`;
+            }
+        });
+        
+        criticalSlider.addEventListener('input', () => {
+            const warning = parseInt(warningSlider.value);
+            const critical = parseInt(criticalSlider.value);
+            if (critical <= warning) {
+                criticalSlider.value = warning + 1;
+                criticalValue.textContent = `${warning + 1}%`;
+            } else {
+                criticalValue.textContent = `${critical}%`;
+            }
         });
         
         thresholdsDiv.appendChild(container);
@@ -228,8 +260,10 @@ async function submitConfiguration() {
 
     if (config.alerts) {
         selectedMetrics.forEach(metric => {
-            const threshold = document.getElementById(`${metric.name}-threshold`).value;
-            config.thresholds[metric.name] = threshold;
+            config.thresholds[metric.name] = {
+                warning: document.getElementById(`${metric.name}-warning`).value,
+                critical: document.getElementById(`${metric.name}-critical`).value
+            };
         });
     }
 
