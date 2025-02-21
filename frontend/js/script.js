@@ -3,6 +3,7 @@ const totalSteps = 4;
 let selectedResources = [];
 let selectedMetrics = [];
 let availableMetrics = [];
+let selectedKeys = {};
 
 document.addEventListener('DOMContentLoaded', async () => {
     try {
@@ -126,22 +127,48 @@ function updateResourceList(resources) {
         div.className = 'resource-item';
         div.innerHTML = `
             <input type="checkbox" id="${resource.Id}" value="${resource.Id}"
-                   ${selectedResources.includes(resource.Id) ? 'checked' : ''}>
+                   ${selectedResources.find(r => r.Id === resource.Id) ? 'checked' : ''}>
             <label for="${resource.Id}">
                 ${resource.Name}
                 <span class="resource-info">${resource.Id} - ${resource.Type}</span>
+                <span class="resource-ips">
+                    Public: ${resource.PublicIpAddress ? resource.PublicIpAddress : 'N/A'} | 
+                    Private: ${resource.PrivateIpAddress ? resource.PrivateIpAddress : 'N/A'}
+                </span>
             </label>
+            <input type="file" id="key-${resource.Id}" class="key-upload" style="display:none;" accept=".pem">
         `;
-        div.querySelector('input').addEventListener('change', (e) => handleResourceSelection(e, resource.Id));
+        // Pass the entire resource object to the handler
+        div.querySelector('input[type="checkbox"]').addEventListener('change', (e) => handleResourceSelection(e, resource));
+        
+        // Listen for key file uploads
+        div.querySelector('.key-upload').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                selectedKeys[resource.Id] = file;
+            } else {
+                delete selectedKeys[resource.Id];
+            }
+        });
         resourceList.appendChild(div);
     });
 }
 
-function handleResourceSelection(event, resourceId) {
+function handleResourceSelection(event, resource) {
+    const keyInput = document.getElementById(`key-${resource.Id}`);
     if (event.target.checked) {
-        selectedResources.push(resourceId);
+        // Check if the resource is already in selectedResources based on its Id
+        if (!selectedResources.find(r => r.Id === resource.Id)) {
+            selectedResources.push(resource);
+        }
+        // Show the file upload for the key
+        keyInput.style.display = 'inline-block';
     } else {
-        selectedResources = selectedResources.filter(id => id !== resourceId);
+        selectedResources = selectedResources.filter(r => r.Id !== resource.Id);
+        // Hide the file upload and clear its value
+        keyInput.style.display = 'none';
+        keyInput.value = "";
+        delete selectedKeys[resource.Id];
     }
     updateNavigationButtons();
 }
@@ -249,13 +276,15 @@ function validateCurrentStep() {
 }
 
 async function submitConfiguration() {
+    // Build the configuration object (without keys for now)
     const config = {
         service: document.getElementById('service').value,
         region: document.getElementById('region').value,
         resources: selectedResources,
         metrics: selectedMetrics,
         alerts: document.getElementById('enableAlerts').checked,
-        thresholds: {}
+        thresholds: {},
+        keys: {}
     };
 
     if (config.alerts) {
@@ -267,13 +296,23 @@ async function submitConfiguration() {
         });
     }
 
+    // Create a FormData object so we can include both JSON and file data.
+    const formData = new FormData();
+    // Append the configuration as a JSON string.
+    formData.append('config', JSON.stringify(config));
+
+    // Append each uploaded key file using a field name that includes the resource ID.
+    selectedResources.forEach(resource => {
+        if (selectedKeys[resource.Id]) {
+            formData.append(`key_${resource.Id}`, selectedKeys[resource.Id]);
+        }
+    });
+
     try {
         const response = await fetch('/api/configure', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(config)
+            // Do not set the Content-Type header manually when using FormData.
+            body: formData
         });
 
         if (!response.ok) {

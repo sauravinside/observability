@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 import boto3
 import json
 import os
+import paramiko
 import subprocess
 import shutil
 from botocore.exceptions import ClientError
@@ -254,7 +255,9 @@ def get_resources(service: str, region: str) -> Dict:
                             'Id': instance['InstanceId'],
                             'Type': instance['InstanceType'],
                             'State': instance['State']['Name'],
-                            'Name': next((tag['Value'] for tag in instance.get('Tags', []) if tag['Key'] == 'Name'), 'Unnamed')
+                            'Name': next((tag['Value'] for tag in instance.get('Tags', []) if tag['Key'] == 'Name'), 'Unnamed'),
+                            'PublicIpAddress': instance.get('PublicIpAddress'),
+                            'PrivateIpAddress': instance.get('PrivateIpAddress')
                         })
 
         elif service.upper() == 'RDS':
@@ -349,10 +352,35 @@ def get_metrics(service: str) -> Dict:
         logger.error(f"Error fetching metrics for {service}: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+
+
+
 @app.route('/api/configure', methods=['POST'])
 def configure_monitoring():
     try:
-        data = request.get_json()
+        # Determine if we're receiving multipart form data.
+        if request.content_type.startswith('multipart/form-data'):
+            config_data = request.form.get('config')
+            if not config_data:
+                return jsonify({'error': 'Missing configuration data'}), 400
+            data = json.loads(config_data)
+            
+            # Process key file uploads
+            uploaded_keys = {}
+            upload_folder = os.path.join(os.getcwd(), 'uploaded_keys')
+            os.makedirs(upload_folder, exist_ok=True)
+            # Loop over all files in the request.
+            for field_name, file in request.files.items():
+                # Expect field names to follow the pattern: key_<resourceId>
+                file_path = os.path.join(upload_folder, file.filename)
+                file.save(file_path)
+                uploaded_keys[field_name] = file_path
+            
+            # Attach uploaded key paths to the configuration data
+            data['uploaded_keys'] = uploaded_keys
+        else:
+            data = request.get_json()
+
         if not data:
             return jsonify({'error': 'No data provided'}), 400
 
@@ -363,6 +391,7 @@ def configure_monitoring():
 
         region = data['region']
         service = data['service'].upper()
+        # Expect each resource to be a dict with at least 'Id' and 'PrivateIpAddress'
         resources = data['resources']
         metrics = data['metrics']
         alerts = data['alerts']
@@ -375,8 +404,11 @@ def configure_monitoring():
         sns = create_aws_client('sns', region)
         cloudwatch = create_aws_client('cloudwatch', region)
 
+        # Build a list of resource IDs (whether resources are strings or dicts)
+        resource_ids = [r['Id'] if isinstance(r, dict) else r for r in resources]
+
         # Create SNS topic
-        topic_name = f"{service}_Monitoring_Alerts_{'-'.join(resources)}"
+        topic_name = f"{service}_Monitoring_Alerts_{'-'.join(resource_ids)}"
         try:
             topic_response = sns.create_topic(Name=topic_name)
             topic_arn = topic_response['TopicArn']
@@ -387,14 +419,14 @@ def configure_monitoring():
         # Create CloudWatch alarms
         alarm_arns = []
         if alerts:
-            for resource_id in resources:
+            for resource in resources:
+                resource_id = resource['Id'] if isinstance(resource, dict) else resource
                 for metric in metrics:
                     try:
-                        # Create dimensions based on service and metric
+                        # Build dimensions based on service and metric
                         dimensions = [{'Name': service_config['dimension_key'], 'Value': resource_id}]
                         if 'dimension' in metric:
                             dimensions.append(metric['dimension'])
-
                         if metric['namespace'] == 'CWAgent':
                             dimensions = [{'Name': 'InstanceId', 'Value': resource_id}]
                             if metric['name'] == 'DiskSpaceUtilization':
@@ -403,7 +435,6 @@ def configure_monitoring():
                                     {'Name': 'device', 'Value': 'xvda1'},
                                     {'Name': 'fstype', 'Value': 'ext4'}
                                 ])
-
                         # Create Warning Alarm
                         warning_alarm_name = f"{resource_id}-{metric['name']}-Warning"
                         warning_alarm_config = {
@@ -447,33 +478,25 @@ def configure_monitoring():
                         return jsonify({'error': f'Failed to create alarms for {resource_id}: {str(e)}'}), 500
 
         # Create CloudWatch dashboard
-        dashboard_name = f"{service}-Monitor-{'-'.join(resources)}"
-        widgets = []
-        x_pos = 0
-        y_pos = 0
-
+        dashboard_name = f"{service}-Monitor_{'-'.join(resource_ids)}"
         widgets = []
         for metric in metrics:
-            metric_data = [
-                [metric['namespace'], metric['name']]  # First row: Namespace & Metric Name
-            ]
-            for resource_id in resources:
+            metric_data = [[metric['namespace'], metric['name']]]
+            for resource in resources:
+                resource_id = resource['Id'] if isinstance(resource, dict) else resource
                 dimensions = [[service_config['dimension_key'], resource_id]]
-
                 if metric['namespace'] == 'CWAgent':
                     dimensions = [['InstanceId', resource_id]]
                     if metric['name'] == 'DiskSpaceUtilization':
-                        dimensions.append(['path', '/'])  # Adjust as needed
+                        dimensions.append(['path', '/'])
                         dimensions.append(['device', 'xvda1'])
                         dimensions.append(['fstype', 'ext4'])
-                metric_data.append([
-                    metric['namespace'], metric['name'],
-                    *[item for dim in dimensions for item in [dim[0], dim[1]]]
-                ])
+                metric_data.append([metric['namespace'], metric['name'],
+                                    *[item for dim in dimensions for item in [dim[0], dim[1]]]])
             widgets.append({
                 "type": "metric",
                 "x": 0,
-                "y": len(widgets) * 6,  # Stack widgets vertically
+                "y": len(widgets) * 6,
                 "width": 24,
                 "height": 6,
                 "properties": {
@@ -493,6 +516,58 @@ def configure_monitoring():
         except ClientError as e:
             logger.error(f"Error creating dashboard: {str(e)}")
             return jsonify({'error': f'Failed to create dashboard: {str(e)}'}), 500
+
+        # Copy install_cloudwatchagent.sh to each selected instance and execute it.
+        for resource in resources:
+            if isinstance(resource, dict):
+                resource_id = resource.get('Id')
+                ip_address = resource.get('PrivateIpAddress')
+            else:
+                resource_id = resource
+                ip_address = None
+
+            if not ip_address:
+                logger.error(f"No private IP found for resource: {resource_id}")
+                continue
+
+            # The key file is expected under a field named "key_<resourceId>"
+            key_field = f"key_{resource_id}"
+            key_path = data.get('uploaded_keys', {}).get(key_field)
+            if not key_path:
+                logger.error(f"No key file found for resource: {resource_id}")
+                continue
+
+            try:
+                # Set proper permissions on the key file.
+                os.chmod(key_path, 0o400)
+                key = paramiko.RSAKey.from_private_key_file(key_path)
+                ssh = paramiko.SSHClient()
+                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                ssh.connect(ip_address, username="ubuntu", pkey=key)
+
+                # Use SFTP to copy install_cloudwatchagent.sh to the remote server.
+                sftp = ssh.open_sftp()
+                local_script_path = os.path.join(os.path.dirname(__file__), "install_cloudwatchagent.sh")
+                remote_script_path = "/home/ubuntu/install_cloudwatchagent.sh"
+                sftp.put(local_script_path, remote_script_path)
+                sftp.close()
+
+                # Define the command to set executable permissions and run the script.
+                agent_command = f"chmod +x {remote_script_path} && sudo bash {remote_script_path}"
+                stdin, stdout, stderr = ssh.exec_command(agent_command)
+                exit_status = stdout.channel.recv_exit_status()
+                output = stdout.read().decode('utf-8')
+                errors = stderr.read().decode('utf-8')
+
+                logger.info(f"SSH command on {resource_id} exited with status {exit_status}")
+                if output:
+                    logger.info(f"Output from {resource_id}: {output}")
+                if errors:
+                    logger.error(f"Errors from {resource_id}: {errors}")
+
+                ssh.close()
+            except Exception as e:
+                logger.error(f"Error running agent command on {resource_id}: {str(e)}")
 
         return jsonify({
             'message': 'Monitoring configured successfully!',
