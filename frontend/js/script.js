@@ -4,13 +4,11 @@ let selectedResources = [];
 let selectedMetrics = [];
 let availableMetrics = [];
 let selectedKeys = {};
+let allResources = []; // stores all fetched resources
 
 document.addEventListener('DOMContentLoaded', async () => {
     try {
-        await Promise.all([
-            fetchServices(),
-            fetchRegions()
-        ]);
+        await fetchServices();
         setupEventListeners();
     } catch (error) {
         showError('Failed to initialize application: ' + error.message);
@@ -19,12 +17,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 function setupEventListeners() {
     document.getElementById('service').addEventListener('change', handleServiceChange);
-    document.getElementById('region').addEventListener('change', handleRegionChange);
-    document.getElementById('enableAlerts').addEventListener('change', handleAlertsToggle);
-    document.querySelector('.close').addEventListener('click', closeModal);
+    // Region selection is now moved to step 2 as a filter.
     document.getElementById('prevBtn').addEventListener('click', prevStep);
     document.getElementById('nextBtn').addEventListener('click', nextStep);
     document.getElementById('submitBtn').addEventListener('click', submitConfiguration);
+    document.getElementById('enableAlerts').addEventListener('change', handleAlertsToggle);
+    document.querySelector('.close').addEventListener('click', closeModal);
+    // Attach listener to the region filter dropdown in step 2
+    document.getElementById('regionFilter').addEventListener('change', filterAndDisplayResources);
 }
 
 async function fetchServices() {
@@ -34,15 +34,6 @@ async function fetchServices() {
     }
     const services = await response.json();
     populateSelect('service', services);
-}
-
-async function fetchRegions() {
-    const response = await fetch('/api/regions');
-    if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const regions = await response.json();
-    populateSelect('region', regions);
 }
 
 function populateSelect(elementId, items) {
@@ -59,7 +50,6 @@ function populateSelect(elementId, items) {
 async function handleServiceChange() {
     const service = document.getElementById('service').value;
     if (!service) return;
-
     try {
         const response = await fetch(`/api/metrics/${service}`);
         if (!response.ok) {
@@ -69,23 +59,6 @@ async function handleServiceChange() {
         updateMetricsGrid();
     } catch (error) {
         showError('Failed to fetch metrics: ' + error.message);
-    }
-}
-
-async function handleRegionChange() {
-    const service = document.getElementById('service').value;
-    const region = document.getElementById('region').value;
-    if (!service || !region) return;
-
-    try {
-        const response = await fetch(`/api/resources/${service}/${region}`);
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const resources = await response.json();
-        updateResourceList(resources);
-    } catch (error) {
-        showError('Failed to fetch resources: ' + error.message);
     }
 }
 
@@ -118,7 +91,68 @@ function handleMetricSelection(event, metric) {
     updateNavigationButtons();
 }
 
+function nextStep() {
+    if (validateCurrentStep()) {
+        if (currentStep === 1) {
+            // In step 1, only the service is selected.
+            // Fetch resources for the chosen service across all regions.
+            const service = document.getElementById('service').value;
+            fetch(`/api/resources/${service}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch resources');
+                    }
+                    return response.json();
+                })
+                .then(resources => {
+                    updateResourceList(resources);
+                    document.getElementById(`step${currentStep}`).style.display = 'none';
+                    currentStep++;
+                    document.getElementById(`step${currentStep}`).style.display = 'block';
+                    updateNavigationButtons();
+                })
+                .catch(error => showError(error.message));
+        } else {
+            document.getElementById(`step${currentStep}`).style.display = 'none';
+            currentStep++;
+            document.getElementById(`step${currentStep}`).style.display = 'block';
+            updateNavigationButtons();
+        }
+    }
+}
+
 function updateResourceList(resources) {
+    // Save full list of resources.
+    allResources = resources;
+    // Populate the region filter dropdown using unique region values.
+    populateRegionFilter();
+    // Initially display all resources.
+    filterAndDisplayResources();
+}
+
+function populateRegionFilter() {
+    const regionFilter = document.getElementById('regionFilter');
+    regionFilter.innerHTML = `<option value="">All Regions</option>`;
+    const regions = Array.from(new Set(allResources.map(r => r.Region))).sort();
+    regions.forEach(region => {
+        const option = document.createElement('option');
+        option.value = region;
+        option.textContent = region;
+        regionFilter.appendChild(option);
+    });
+}
+
+function filterAndDisplayResources() {
+    const regionFilter = document.getElementById('regionFilter');
+    const selectedRegion = regionFilter.value;
+    let filteredResources = allResources;
+    if (selectedRegion) {
+        filteredResources = allResources.filter(r => r.Region === selectedRegion);
+    }
+    updateResourceListUI(filteredResources);
+}
+
+function updateResourceListUI(resources) {
     const resourceList = document.getElementById('resourceList');
     resourceList.innerHTML = '';
     
@@ -129,7 +163,7 @@ function updateResourceList(resources) {
             <input type="checkbox" id="${resource.Id}" value="${resource.Id}"
                    ${selectedResources.find(r => r.Id === resource.Id) ? 'checked' : ''}>
             <label for="${resource.Id}">
-                ${resource.Name}
+                ${resource.Name} <small>(${resource.Region})</small>
                 <span class="resource-info">${resource.Id} - ${resource.Type}</span>
                 <span class="resource-ips">
                     Public: ${resource.PublicIpAddress ? resource.PublicIpAddress : 'N/A'} | 
@@ -138,7 +172,6 @@ function updateResourceList(resources) {
             </label>
             <input type="file" id="key-${resource.Id}" class="key-upload" style="display:none;" accept=".pem">
         `;
-        // Pass the entire resource object to the handler
         div.querySelector('input[type="checkbox"]').addEventListener('change', (e) => handleResourceSelection(e, resource));
         
         // Listen for key file uploads
@@ -157,15 +190,12 @@ function updateResourceList(resources) {
 function handleResourceSelection(event, resource) {
     const keyInput = document.getElementById(`key-${resource.Id}`);
     if (event.target.checked) {
-        // Check if the resource is already in selectedResources based on its Id
         if (!selectedResources.find(r => r.Id === resource.Id)) {
             selectedResources.push(resource);
         }
-        // Show the file upload for the key
         keyInput.style.display = 'inline-block';
     } else {
         selectedResources = selectedResources.filter(r => r.Id !== resource.Id);
-        // Hide the file upload and clear its value
         keyInput.style.display = 'none';
         keyInput.value = "";
         delete selectedKeys[resource.Id];
@@ -207,7 +237,6 @@ function updateThresholdsDisplay() {
             </div>
         `;
         
-        // Add event listeners for both sliders
         const warningSlider = container.querySelector('.warning-slider');
         const criticalSlider = container.querySelector('.critical-slider');
         const warningValue = container.querySelector('.warning-value');
@@ -239,15 +268,6 @@ function updateThresholdsDisplay() {
     });
 }
 
-function nextStep() {
-    if (validateCurrentStep()) {
-        document.getElementById(`step${currentStep}`).style.display = 'none';
-        currentStep++;
-        document.getElementById(`step${currentStep}`).style.display = 'block';
-        updateNavigationButtons();
-    }
-}
-
 function prevStep() {
     document.getElementById(`step${currentStep}`).style.display = 'none';
     currentStep--;
@@ -264,8 +284,7 @@ function updateNavigationButtons() {
 function validateCurrentStep() {
     switch (currentStep) {
         case 1:
-            return document.getElementById('service').value && 
-                   document.getElementById('region').value;
+            return document.getElementById('service').value;
         case 2:
             return selectedResources.length > 0;
         case 3:
@@ -276,10 +295,10 @@ function validateCurrentStep() {
 }
 
 async function submitConfiguration() {
-    // Build the configuration object (without keys for now)
     const config = {
         service: document.getElementById('service').value,
-        region: document.getElementById('region').value,
+        // Since the user does not select a region in step 1, we use the region of the first selected resource.
+        region: selectedResources.length > 0 ? selectedResources[0].Region : '',
         resources: selectedResources,
         metrics: selectedMetrics,
         alerts: document.getElementById('enableAlerts').checked,
@@ -296,12 +315,9 @@ async function submitConfiguration() {
         });
     }
 
-    // Create a FormData object so we can include both JSON and file data.
     const formData = new FormData();
-    // Append the configuration as a JSON string.
     formData.append('config', JSON.stringify(config));
 
-    // Append each uploaded key file using a field name that includes the resource ID.
     selectedResources.forEach(resource => {
         if (selectedKeys[resource.Id]) {
             formData.append(`key_${resource.Id}`, selectedKeys[resource.Id]);
@@ -311,7 +327,6 @@ async function submitConfiguration() {
     try {
         const response = await fetch('/api/configure', {
             method: 'POST',
-            // Do not set the Content-Type header manually when using FormData.
             body: formData
         });
 

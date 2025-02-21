@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import boto3
 import json
 import os
@@ -21,7 +22,6 @@ CORS(app)
 FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'frontend')
 
 # Updated AWS_SERVICES configuration in app.py
-
 AWS_SERVICES = {
     'EC2': {
         'namespace': 'AWS/EC2',
@@ -235,108 +235,134 @@ def get_regions() -> Dict:
         logger.error(f"Error fetching regions: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/resources/<service>/<region>')
-def get_resources(service: str, region: str) -> Dict:
-    """Get resources for specified service and region"""
+@app.route('/api/resources/<service>', methods=['GET'])
+def get_resources_all_regions(service: str) -> dict:
+    """Get resources for the specified service from all AWS regions concurrently"""
     try:
         service_config = AWS_SERVICES.get(service.upper())
         if not service_config:
             return jsonify({'error': 'Invalid service'}), 400
 
-        client = create_aws_client(service.lower(), region)
+        # Get list of all AWS regions
+        ec2 = create_aws_client('ec2', region='us-east-1')
+        response = ec2.describe_regions()
+        regions = [region['RegionName'] for region in response['Regions']]
+
         resources = []
 
-        if service.upper() == 'EC2':
-            instances = client.describe_instances()['Reservations']
-            for reservation in instances:
-                for instance in reservation['Instances']:
-                    if instance['State']['Name'] == 'running':
-                        resources.append({
-                            'Id': instance['InstanceId'],
-                            'Type': instance['InstanceType'],
-                            'State': instance['State']['Name'],
-                            'Name': next((tag['Value'] for tag in instance.get('Tags', []) if tag['Key'] == 'Name'), 'Unnamed'),
-                            'PublicIpAddress': instance.get('PublicIpAddress'),
-                            'PrivateIpAddress': instance.get('PrivateIpAddress')
+        def fetch_resources_for_region(region):
+            region_resources = []
+            try:
+                client = create_aws_client(service.lower(), region)
+                if service.upper() == 'EC2':
+                    instances = client.describe_instances()['Reservations']
+                    for reservation in instances:
+                        for instance in reservation['Instances']:
+                            if instance['State']['Name'] == 'running':
+                                region_resources.append({
+                                    'Id': instance['InstanceId'],
+                                    'Type': instance['InstanceType'],
+                                    'State': instance['State']['Name'],
+                                    'Name': next((tag['Value'] for tag in instance.get('Tags', []) if tag['Key'] == 'Name'), 'Unnamed'),
+                                    'PublicIpAddress': instance.get('PublicIpAddress'),
+                                    'PrivateIpAddress': instance.get('PrivateIpAddress'),
+                                    'Region': region
+                                })
+                elif service.upper() == 'RDS':
+                    instances = client.describe_db_instances()['DBInstances']
+                    for instance in instances:
+                        region_resources.append({
+                            'Id': instance['DBInstanceIdentifier'],
+                            'Type': instance['DBInstanceClass'],
+                            'State': instance['DBInstanceStatus'],
+                            'Name': instance.get('DBName', instance['DBInstanceIdentifier']),
+                            'Region': region
                         })
+                elif service.upper() == 'LAMBDA':
+                    functions = client.list_functions()['Functions']
+                    for function in functions:
+                        region_resources.append({
+                            'Id': function['FunctionName'],
+                            'Type': function.get('Runtime', ''),
+                            'State': function.get('State', 'Active'),
+                            'Name': function['FunctionName'],
+                            'Region': region
+                        })
+                elif service.upper() == 'DYNAMODB':
+                    tables = client.list_tables()['TableNames']
+                    for table in tables:
+                        region_resources.append({
+                            'Id': table,
+                            'Type': 'DynamoDB Table',
+                            'State': 'Active',
+                            'Name': table,
+                            'Region': region
+                        })
+                elif service.upper() == 'ECS':
+                    clusters = client.list_clusters()['clusterArns']
+                    for cluster_arn in clusters:
+                        cluster_name = cluster_arn.split('/')[-1]
+                        region_resources.append({
+                            'Id': cluster_name,
+                            'Type': 'ECS Cluster',
+                            'State': 'Active',
+                            'Name': cluster_name,
+                            'Region': region
+                        })
+                elif service.upper() == 'ELASTICACHE':
+                    clusters = client.describe_cache_clusters()['CacheClusters']
+                    for cluster in clusters:
+                        region_resources.append({
+                            'Id': cluster['CacheClusterId'],
+                            'Type': cluster['Engine'],
+                            'State': cluster['CacheClusterStatus'],
+                            'Name': cluster['CacheClusterId'],
+                            'Region': region
+                        })
+                elif service.upper() == 'ELB':
+                    lbs = client.describe_load_balancers()['LoadBalancerDescriptions']
+                    for lb in lbs:
+                        region_resources.append({
+                            'Id': lb['LoadBalancerName'],
+                            'Type': 'Classic Load Balancer',
+                            'State': 'Active',
+                            'Name': lb['LoadBalancerName'],
+                            'Region': region
+                        })
+                elif service.upper() == 'SQS':
+                    queues = client.list_queues()['QueueUrls']
+                    for queue in queues:
+                        queue_name = queue.split('/')[-1]
+                        region_resources.append({
+                            'Id': queue_name,
+                            'Type': 'SQS Queue',
+                            'State': 'Active',
+                            'Name': queue_name,
+                            'Region': region
+                        })
+                elif service.upper() == 'S3':
+                    buckets = client.list_buckets()['Buckets']
+                    for bucket in buckets:
+                        region_resources.append({
+                            'Id': bucket['Name'],
+                            'Type': 'S3 Bucket',
+                            'State': 'Active',
+                            'Name': bucket['Name'],
+                            'Region': region  # S3 buckets are global; region used here for display purposes
+                        })
+            except Exception as region_error:
+                logger.warning(f"Could not fetch resources for service {service} in region {region}: {str(region_error)}")
+            return region_resources
 
-        elif service.upper() == 'RDS':
-            instances = client.describe_db_instances()['DBInstances']
-            resources = [{
-                'Id': instance['DBInstanceIdentifier'],
-                'Type': instance['DBInstanceClass'],
-                'State': instance['DBInstanceStatus'],
-                'Name': instance.get('DBName', instance['DBInstanceIdentifier'])
-            } for instance in instances]
-
-        elif service.upper() == 'LAMBDA':
-            functions = client.list_functions()['Functions']
-            resources = [{
-                'Id': function['FunctionName'],
-                'Type': function['Runtime'],
-                'State': function['State'] if 'State' in function else 'Active',
-                'Name': function['FunctionName']
-            } for function in functions]
-
-        elif service.upper() == 'DYNAMODB':
-            tables = client.list_tables()['TableNames']
-            resources = [{
-                'Id': table,
-                'Type': 'DynamoDB Table',
-                'State': 'Active',
-                'Name': table
-            } for table in tables]
-
-        elif service.upper() == 'ECS':
-            clusters = client.list_clusters()['clusterArns']
-            for cluster_arn in clusters:
-                cluster_name = cluster_arn.split('/')[-1]
-                resources.append({
-                    'Id': cluster_name,
-                    'Type': 'ECS Cluster',
-                    'State': 'Active',
-                    'Name': cluster_name
-                })
-
-        elif service.upper() == 'ELASTICACHE':
-            clusters = client.describe_cache_clusters()['CacheClusters']
-            resources = [{
-                'Id': cluster['CacheClusterId'],
-                'Type': cluster['Engine'],
-                'State': cluster['CacheClusterStatus'],
-                'Name': cluster['CacheClusterId']
-            } for cluster in clusters]
-
-        elif service.upper() == 'ELB':
-            lbs = client.describe_load_balancers()['LoadBalancerDescriptions']
-            resources = [{
-                'Id': lb['LoadBalancerName'],
-                'Type': 'Classic Load Balancer',
-                'State': 'Active',
-                'Name': lb['LoadBalancerName']
-            } for lb in lbs]
-
-        elif service.upper() == 'SQS':
-            queues = client.list_queues()['QueueUrls']
-            resources = [{
-                'Id': queue.split('/')[-1],
-                'Type': 'SQS Queue',
-                'State': 'Active',
-                'Name': queue.split('/')[-1]
-            } for queue in queues]
-
-        elif service.upper() == 'S3':
-            buckets = client.list_buckets()['Buckets']
-            resources = [{
-                'Id': bucket['Name'],
-                'Type': 'S3 Bucket',
-                'State': 'Active',
-                'Name': bucket['Name']
-            } for bucket in buckets]
+        # Fetch resources concurrently from all regions.
+        with ThreadPoolExecutor(max_workers=len(regions)) as executor:
+            future_to_region = {executor.submit(fetch_resources_for_region, region): region for region in regions}
+            for future in as_completed(future_to_region):
+                resources.extend(future.result())
 
         return jsonify(resources)
     except Exception as e:
-        logger.error(f"Error fetching resources for {service} in {region}: {str(e)}")
+        logger.error(f"Error fetching resources for {service} across all regions: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/metrics/<service>')
@@ -351,9 +377,6 @@ def get_metrics(service: str) -> Dict:
     except Exception as e:
         logger.error(f"Error fetching metrics for {service}: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
-
-
 
 @app.route('/api/configure', methods=['POST'])
 def configure_monitoring():
@@ -406,6 +429,8 @@ def configure_monitoring():
 
         # Build a list of resource IDs (whether resources are strings or dicts)
         resource_ids = [r['Id'] if isinstance(r, dict) else r for r in resources]
+        # Define dashboard_name here to ensure it is always available
+        dashboard_name = f"{service}-Monitor_{'-'.join(resource_ids)}"
 
         # Create SNS topic
         topic_name = f"{service}_Monitoring_Alerts_{'-'.join(resource_ids)}"
@@ -478,7 +503,6 @@ def configure_monitoring():
                         return jsonify({'error': f'Failed to create alarms for {resource_id}: {str(e)}'}), 500
 
         # Create CloudWatch dashboard
-        dashboard_name = f"{service}-Monitor_{'-'.join(resource_ids)}"
         widgets = []
         for metric in metrics:
             metric_data = [[metric['namespace'], metric['name']]]
@@ -507,7 +531,6 @@ def configure_monitoring():
                     "title": f"{metric['name']} across {len(resources)} instances"
                 }
             })
-
         try:
             cloudwatch.put_dashboard(
                 DashboardName=dashboard_name,
@@ -544,6 +567,15 @@ def configure_monitoring():
                 ssh = paramiko.SSHClient()
                 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
                 ssh.connect(ip_address, username="ubuntu", pkey=key)
+
+                # Check if CloudWatch agent is already installed.
+                check_cmd = "if [ -x /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl ]; then echo 'installed'; else echo 'not installed'; fi"
+                stdin, stdout, stderr = ssh.exec_command(check_cmd)
+                status = stdout.read().decode('utf-8').strip()
+                if status == 'installed':
+                    logger.info(f"CloudWatch agent already installed on {resource_id}, skipping installation.")
+                    ssh.close()
+                    continue
 
                 # Use SFTP to copy install_cloudwatchagent.sh to the remote server.
                 sftp = ssh.open_sftp()
