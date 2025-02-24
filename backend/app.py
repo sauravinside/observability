@@ -324,7 +324,8 @@ def get_regions() -> Dict:
 @app.route('/api/resources/<service>', methods=['GET'])
 def get_resources_all_regions(service: str) -> dict:
     try:
-        service_config = AWS_SERVICES.get(service.upper())
+        # Perform a case-insensitive lookup for the service configuration.
+        service_config = next((AWS_SERVICES[k] for k in AWS_SERVICES if k.lower() == service.lower()), None)
         if not service_config:
             return jsonify({'error': 'Invalid service'}), 400
 
@@ -336,8 +337,9 @@ def get_resources_all_regions(service: str) -> dict:
         def fetch_resources_for_region(region):
             region_resources = []
             try:
+                # Use service.lower() for the client name.
                 client = create_aws_client(service.lower(), region)
-                if service.upper() == 'EC2':
+                if service.lower() == 'ec2':
                     instances = client.describe_instances()['Reservations']
                     for reservation in instances:
                         for instance in reservation['Instances']:
@@ -351,7 +353,7 @@ def get_resources_all_regions(service: str) -> dict:
                                     'PrivateIpAddress': instance.get('PrivateIpAddress'),
                                     'Region': region
                                 })
-                elif service.upper() == 'RDS':
+                elif service.lower() == 'rds':
                     instances = client.describe_db_instances()['DBInstances']
                     for instance in instances:
                         region_resources.append({
@@ -361,7 +363,7 @@ def get_resources_all_regions(service: str) -> dict:
                             'Name': instance.get('DBName', instance['DBInstanceIdentifier']),
                             'Region': region
                         })
-                elif service.upper() == 'LAMBDA':
+                elif service.lower() == 'lambda':
                     functions = client.list_functions()['Functions']
                     for function in functions:
                         region_resources.append({
@@ -371,7 +373,7 @@ def get_resources_all_regions(service: str) -> dict:
                             'Name': function['FunctionName'],
                             'Region': region
                         })
-                elif service.upper() == 'DYNAMODB':
+                elif service.lower() == 'dynamodb':
                     tables = client.list_tables()['TableNames']
                     for table in tables:
                         region_resources.append({
@@ -381,7 +383,7 @@ def get_resources_all_regions(service: str) -> dict:
                             'Name': table,
                             'Region': region
                         })
-                elif service.upper() == 'ECS':
+                elif service.lower() == 'ecs':
                     clusters = client.list_clusters()['clusterArns']
                     for cluster_arn in clusters:
                         cluster_name = cluster_arn.split('/')[-1]
@@ -392,7 +394,7 @@ def get_resources_all_regions(service: str) -> dict:
                             'Name': cluster_name,
                             'Region': region
                         })
-                elif service.upper() == 'ELASTICACHE':
+                elif service.lower() == 'elasticache':
                     clusters = client.describe_cache_clusters()['CacheClusters']
                     for cluster in clusters:
                         region_resources.append({
@@ -402,7 +404,7 @@ def get_resources_all_regions(service: str) -> dict:
                             'Name': cluster['CacheClusterId'],
                             'Region': region
                         })
-                elif service.upper() == 'ELB':
+                elif service.lower() == 'elb':
                     lbs = client.describe_load_balancers()['LoadBalancerDescriptions']
                     for lb in lbs:
                         region_resources.append({
@@ -412,7 +414,7 @@ def get_resources_all_regions(service: str) -> dict:
                             'Name': lb['LoadBalancerName'],
                             'Region': region
                         })
-                elif service.upper() == 'SQS':
+                elif service.lower() == 'sqs':
                     queues = client.list_queues()['QueueUrls']
                     for queue in queues:
                         queue_name = queue.split('/')[-1]
@@ -423,7 +425,7 @@ def get_resources_all_regions(service: str) -> dict:
                             'Name': queue_name,
                             'Region': region
                         })
-                elif service.upper() == 'S3':
+                elif service.lower() == 's3':
                     buckets = client.list_buckets()['Buckets']
                     for bucket in buckets:
                         region_resources.append({
@@ -449,7 +451,8 @@ def get_resources_all_regions(service: str) -> dict:
 @app.route('/api/metrics/<service>')
 def get_metrics(service: str) -> Dict:
     try:
-        service_config = AWS_SERVICES.get(service.upper())
+        # Perform a case-insensitive lookup for the service configuration.
+        service_config = next((AWS_SERVICES[k] for k in AWS_SERVICES if k.lower() == service.lower()), None)
         if not service_config:
             return jsonify({'error': 'Invalid service'}), 400
         return jsonify(service_config['metrics'])
@@ -460,6 +463,7 @@ def get_metrics(service: str) -> Dict:
 @app.route('/api/configure', methods=['POST'])
 def configure_monitoring():
     try:
+        # Parse incoming data and process file uploads if any
         if request.content_type.startswith('multipart/form-data'):
             config_data = request.form.get('config')
             if not config_data:
@@ -479,6 +483,7 @@ def configure_monitoring():
         if not data:
             return jsonify({'error': 'No data provided'}), 400
 
+        # Verify required fields
         required_fields = ['region', 'service', 'resources', 'metrics', 'alerts', 'thresholds']
         for field in required_fields:
             if field not in data:
@@ -498,10 +503,13 @@ def configure_monitoring():
         sns = create_aws_client('sns', region)
         cloudwatch = create_aws_client('cloudwatch', region)
 
-        resource_ids = [r['Id'] if isinstance(r, dict) else r for r in resources]
+        # Compute resource IDs and add fallback if empty
+        resource_ids = [r['Id'] if isinstance(r, dict) and 'Id' in r else r for r in resources]
+        if not resource_ids or all(not str(r).strip() for r in resource_ids):
+            resource_ids = ['None']
         dashboard_name = f"{service}-Monitor_{'-'.join(resource_ids)}"
-
         topic_name = f"{service}_Monitoring_Alerts_{'-'.join(resource_ids)}"
+
         try:
             topic_response = sns.create_topic(Name=topic_name)
             topic_arn = topic_response['TopicArn']
@@ -561,7 +569,6 @@ def configure_monitoring():
                         }
                         cloudwatch.put_metric_alarm(**critical_alarm_config)
                         alarm_arns.append(critical_alarm_name)
-
                     except ClientError as e:
                         logger.error(f"Error creating alarms for {resource_id}: {str(e)}")
                         return jsonify({'error': f'Failed to create alarms for {resource_id}: {str(e)}'}), 500
@@ -571,6 +578,8 @@ def configure_monitoring():
             for resource in resources:
                 instance_id = resource['Id']
                 ensure_instance_role(instance_id, region)
+        else:
+            logger.info(f"Skipping CloudWatch agent installation since service is {service} (not EC2).")
 
         # Dashboard creation
         widgets = []
@@ -610,62 +619,6 @@ def configure_monitoring():
         except ClientError as e:
             logger.error(f"Error creating dashboard: {str(e)}")
             return jsonify({'error': f'Failed to create dashboard: {str(e)}'}), 500
-
-        # Process CloudWatch agent installation on each instance, only for EC2.
-        if service == 'EC2':
-            for resource in resources:
-                if isinstance(resource, dict):
-                    resource_id = resource.get('Id')
-                    ip_address = resource.get('PrivateIpAddress')
-                else:
-                    resource_id = resource
-                    ip_address = None
-
-                if not ip_address:
-                    logger.error(f"No private IP found for resource: {resource_id}")
-                    continue
-
-                key_field = f"key_{resource_id}"
-                key_path = data.get('uploaded_keys', {}).get(key_field)
-                if not key_path:
-                    logger.error(f"No key file found for resource: {resource_id}")
-                    continue
-
-                try:
-                    os.chmod(key_path, 0o400)
-                    key = paramiko.RSAKey.from_private_key_file(key_path)
-                    ssh = paramiko.SSHClient()
-                    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                    ssh.connect(ip_address, username="ubuntu", pkey=key)
-
-                    check_cmd = "if [ -x /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl ]; then echo 'installed'; else echo 'not installed'; fi"
-                    stdin, stdout, stderr = ssh.exec_command(check_cmd)
-                    status = stdout.read().decode('utf-8').strip()
-                    if status == 'installed':
-                        logger.info(f"CloudWatch agent already installed on {resource_id}, skipping installation.")
-                        ssh.close()
-                        continue
-
-                    sftp = ssh.open_sftp()
-                    local_script_path = os.path.join(os.path.dirname(__file__), "install_cloudwatchagent.sh")
-                    remote_script_path = "/home/ubuntu/install_cloudwatchagent.sh"
-                    sftp.put(local_script_path, remote_script_path)
-                    sftp.close()
-
-                    agent_command = f"chmod +x {remote_script_path} && sudo bash {remote_script_path}"
-                    stdin, stdout, stderr = ssh.exec_command(agent_command)
-                    exit_status = stdout.channel.recv_exit_status()
-                    output = stdout.read().decode('utf-8')
-                    errors = stderr.read().decode('utf-8')
-                    if exit_status != 0:
-                        logger.error(f"SSH command on {resource_id} failed with status {exit_status}. Errors: {errors}")
-                    else:
-                        logger.info(f"SSH command on {resource_id} succeeded with status {exit_status}. Output: {output}")
-                    ssh.close()
-                except Exception as e:
-                    logger.error(f"Error running agent command on {resource_id}: {str(e)}")
-        else:
-            logger.info(f"Skipping CloudWatch agent installation since service is {service} (not EC2).")
 
         return jsonify({
             'message': 'Monitoring configured successfully!',
