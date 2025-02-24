@@ -19,11 +19,6 @@ sudo apt install -y awscli python3-boto3 python3-flask-cors \
     python3-paramiko python3-scp \
     awscli-plugin-rds awscli-plugin-lambda
 
-# Install Terraform (check for the latest version on HashiCorp's website and update URL)
-wget https://releases.hashicorp.com/terraform/1.6.0/terraform_1.6.0_linux_amd64.zip  # Update version if needed
-unzip terraform_1.6.0_linux_amd64.zip
-sudo mv terraform /usr/local/bin/
-
 # Install AWS CLI (Corrected)
 curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
 unzip awscliv2.zip
@@ -77,11 +72,5 @@ sudo systemctl enable amazon-cloudwatch-agent
 rm amazon-cloudwatch-agent.deb
 
 echo "CloudWatch agent installed and configured for memory and disk metrics."
-
-# Create project directories (if they don't exist)
-mkdir -p aws-monitoring-tool/frontend aws-monitoring-tool/backend aws-monitoring-tool/terraform
-
-# Create empty files (if they don't exist)
-touch aws-monitoring-tool/frontend/index.html aws-monitoring-tool/backend/app.py aws-monitoring-tool/terraform/main.tf
 
 echo "Prerequisites installed. Now copy your application files into the correct locations and run the application."
