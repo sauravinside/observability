@@ -84,15 +84,4 @@ mkdir -p aws-monitoring-tool/frontend aws-monitoring-tool/backend aws-monitoring
 # Create empty files (if they don't exist)
 touch aws-monitoring-tool/frontend/index.html aws-monitoring-tool/backend/app.py aws-monitoring-tool/terraform/main.tf
 
-# Set up AWS credentials (using profiles - IMPORTANT)
-mkdir -p ~/.aws  # Ensure .aws directory exists
-cat << EOF > ~/.aws/credentials
-[default]  # Or your profile name
-aws_access_key_id = AKIAS4T6KVMBEEX7O26P  # REPLACE WITH YOUR KEY
-aws_secret_access_key = HvGtLSIHrXCKOftfnW46riCd8OawQoQ3AuSdTCfv # REPLACE WITH YOUR SECRET
-EOF
-
-echo "export AWS_PROFILE=\"default\"" >> ~/.bashrc
-source ~/.bashrc
-
 echo "Prerequisites installed. Now copy your application files into the correct locations and run the application."
