@@ -11,14 +11,11 @@
     <div class="setup-wizard">
       <h1>AWS Resource Monitoring Setup</h1>
       
-      <!-- Step 1: Service Selection (region selection removed) -->
+      <!-- Step 1: Service Selection -->
       <div class="step" id="step1">
         <h2>Step 1: Select AWS Service</h2>
-        <div class="form-group">
-          <label for="service">AWS Service</label>
-          <select id="service" name="service" required>
-            <option value="">Select AWS Service</option>
-          </select>
+        <div id="serviceGrid" class="service-grid">
+          <!-- Service cards will be populated dynamically -->
         </div>
       </div>
 

@@ -5,7 +5,19 @@ let selectedMetrics = [];
 let availableMetrics = [];
 let selectedKeys = {};
 let allResources = []; // stores all fetched resources
+let selectedService = null;
 
+const serviceLogos = {
+    "EC2": "images/ec2.png",
+    "RDS": "images/rds.png",
+    "Lambda": "images/lambda.png",
+    "DynamoDB": "images/dynamodb.png",
+    "ECS": "images/ecs.png",
+    "ElastiCache": "images/elasticache.png",
+    "ELB": "images/elb.png",
+    "SQS": "images/sqs.png",
+    "S3": "images/s3.png"
+};
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         await fetchServices();
@@ -16,14 +28,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function setupEventListeners() {
-    document.getElementById('service').addEventListener('change', handleServiceChange);
-    // Region selection is now moved to step 2 as a filter.
+    // No need for service select change; service card clicks are handled in populateServiceGrid.
     document.getElementById('prevBtn').addEventListener('click', prevStep);
     document.getElementById('nextBtn').addEventListener('click', nextStep);
     document.getElementById('submitBtn').addEventListener('click', submitConfiguration);
     document.getElementById('enableAlerts').addEventListener('change', handleAlertsToggle);
     document.querySelector('.close').addEventListener('click', closeModal);
-    // Attach listener to the region filter dropdown in step 2
     document.getElementById('regionFilter').addEventListener('change', filterAndDisplayResources);
 }
 
@@ -33,19 +43,34 @@ async function fetchServices() {
         throw new Error(`HTTP error! status: ${response.status}`);
     }
     const services = await response.json();
-    populateSelect('service', services);
+    populateServiceGrid(services);
 }
 
-function populateSelect(elementId, items) {
-    const select = document.getElementById(elementId);
-    select.innerHTML = `<option value="">Select ${elementId.charAt(0).toUpperCase() + elementId.slice(1)}</option>`;
-    items.forEach(item => {
-        const option = document.createElement('option');
-        option.value = item;
-        option.textContent = item;
-        select.appendChild(option);
+function populateServiceGrid(services) {
+    const serviceGrid = document.getElementById('serviceGrid');
+    serviceGrid.innerHTML = '';
+    services.forEach(service => {
+        const card = document.createElement('div');
+        card.className = 'service-card';
+        card.innerHTML = `
+            <img src="${serviceLogos[service] || 'images/default.png'}" alt="${service}" class="service-icon">
+            <h3>${service}</h3>
+            <p>Click to select ${service}</p>
+        `;
+        card.addEventListener('click', () => {
+            // Deselect any previously selected card
+            const cards = document.querySelectorAll('.service-card');
+            cards.forEach(c => c.classList.remove('selected'));
+            // Mark this card as selected and store the service name
+            card.classList.add('selected');
+            selectedService = service;
+            // Automatically move to the next step
+            nextStep();
+        });
+        serviceGrid.appendChild(card);
     });
 }
+
 
 async function handleServiceChange() {
     const service = document.getElementById('service').value;
@@ -94,10 +119,12 @@ function handleMetricSelection(event, metric) {
 function nextStep() {
     if (validateCurrentStep()) {
         if (currentStep === 1) {
-            // In step 1, only the service is selected.
-            // Fetch resources for the chosen service across all regions.
-            const service = document.getElementById('service').value;
-            fetch(`/api/resources/${service}`)
+            if (!selectedService) {
+                showError('Please select an AWS service.');
+                return;
+            }
+            // Fetch resources for the chosen service
+            fetch(`/api/resources/${selectedService}`)
                 .then(response => {
                     if (!response.ok) {
                         throw new Error('Failed to fetch resources');
@@ -106,6 +133,24 @@ function nextStep() {
                 })
                 .then(resources => {
                     updateResourceList(resources);
+                    document.getElementById(`step${currentStep}`).style.display = 'none';
+                    currentStep++;
+                    document.getElementById(`step${currentStep}`).style.display = 'block';
+                    updateNavigationButtons();
+                })
+                .catch(error => showError(error.message));
+        } else if (currentStep === 2) {
+            // Before moving to step 3, fetch the metrics for the selected service
+            fetch(`/api/metrics/${selectedService}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch metrics');
+                    }
+                    return response.json();
+                })
+                .then(metrics => {
+                    availableMetrics = metrics;
+                    updateMetricsGrid();
                     document.getElementById(`step${currentStep}`).style.display = 'none';
                     currentStep++;
                     document.getElementById(`step${currentStep}`).style.display = 'block';
@@ -284,7 +329,7 @@ function updateNavigationButtons() {
 function validateCurrentStep() {
     switch (currentStep) {
         case 1:
-            return document.getElementById('service').value;
+            return selectedService !== null;
         case 2:
             return selectedResources.length > 0;
         case 3:
@@ -296,8 +341,7 @@ function validateCurrentStep() {
 
 async function submitConfiguration() {
     const config = {
-        service: document.getElementById('service').value,
-        // Since the region isn't chosen by the user, use the region of the first selected resource.
+        service: selectedService,
         region: selectedResources.length > 0 ? selectedResources[0].Region : '',
         resources: selectedResources,
         metrics: selectedMetrics,

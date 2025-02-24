@@ -251,9 +251,12 @@ def setup_nginx() -> None:
         os.makedirs('/var/www/html/css', exist_ok=True)
         os.makedirs('/var/www/html/js', exist_ok=True)
         
+        # Copy HTML, CSS, and JS files
         shutil.copy(os.path.join(FRONTEND_DIR, 'index.html'), '/var/www/html/')
         shutil.copy(os.path.join(FRONTEND_DIR, 'css/styles.css'), '/var/www/html/css/')
         shutil.copy(os.path.join(FRONTEND_DIR, 'js/script.js'), '/var/www/html/js/')
+        # Copy the images folder (ensure your images folder is in the frontend folder)
+        shutil.copytree(os.path.join(FRONTEND_DIR, 'images'), '/var/www/html/images', dirs_exist_ok=True)
 
         nginx_config = """
         server {
@@ -271,11 +274,6 @@ def setup_nginx() -> None:
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                 proxy_set_header X-Forwarded-Proto $scheme;
-
-                proxy_connect_timeout 600;
-                proxy_send_timeout 600;
-                proxy_read_timeout 600;
-                send_timeout 600;
             }
         }
         """
@@ -293,7 +291,7 @@ def setup_nginx() -> None:
     except Exception as e:
         logger.error(f"Error setting up nginx: {str(e)}")
         raise
-
+    
 def create_aws_client(service: str, region: str = None) -> boto3.client:
     try:
         if region:
