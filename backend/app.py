@@ -611,58 +611,61 @@ def configure_monitoring():
             logger.error(f"Error creating dashboard: {str(e)}")
             return jsonify({'error': f'Failed to create dashboard: {str(e)}'}), 500
 
-        # Process CloudWatch agent installation on each instance.
-        for resource in resources:
-            if isinstance(resource, dict):
-                resource_id = resource.get('Id')
-                ip_address = resource.get('PrivateIpAddress')
-            else:
-                resource_id = resource
-                ip_address = None
+        # Process CloudWatch agent installation on each instance, only for EC2.
+        if service == 'EC2':
+            for resource in resources:
+                if isinstance(resource, dict):
+                    resource_id = resource.get('Id')
+                    ip_address = resource.get('PrivateIpAddress')
+                else:
+                    resource_id = resource
+                    ip_address = None
 
-            if not ip_address:
-                logger.error(f"No private IP found for resource: {resource_id}")
-                continue
-
-            key_field = f"key_{resource_id}"
-            key_path = data.get('uploaded_keys', {}).get(key_field)
-            if not key_path:
-                logger.error(f"No key file found for resource: {resource_id}")
-                continue
-
-            try:
-                os.chmod(key_path, 0o400)
-                key = paramiko.RSAKey.from_private_key_file(key_path)
-                ssh = paramiko.SSHClient()
-                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                ssh.connect(ip_address, username="ubuntu", pkey=key)
-
-                check_cmd = "if [ -x /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl ]; then echo 'installed'; else echo 'not installed'; fi"
-                stdin, stdout, stderr = ssh.exec_command(check_cmd)
-                status = stdout.read().decode('utf-8').strip()
-                if status == 'installed':
-                    logger.info(f"CloudWatch agent already installed on {resource_id}, skipping installation.")
-                    ssh.close()
+                if not ip_address:
+                    logger.error(f"No private IP found for resource: {resource_id}")
                     continue
 
-                sftp = ssh.open_sftp()
-                local_script_path = os.path.join(os.path.dirname(__file__), "install_cloudwatchagent.sh")
-                remote_script_path = "/home/ubuntu/install_cloudwatchagent.sh"
-                sftp.put(local_script_path, remote_script_path)
-                sftp.close()
+                key_field = f"key_{resource_id}"
+                key_path = data.get('uploaded_keys', {}).get(key_field)
+                if not key_path:
+                    logger.error(f"No key file found for resource: {resource_id}")
+                    continue
 
-                agent_command = f"chmod +x {remote_script_path} && sudo bash {remote_script_path}"
-                stdin, stdout, stderr = ssh.exec_command(agent_command)
-                exit_status = stdout.channel.recv_exit_status()
-                output = stdout.read().decode('utf-8')
-                errors = stderr.read().decode('utf-8')
-                if exit_status != 0:
-                    logger.error(f"SSH command on {resource_id} failed with status {exit_status}. Errors: {errors}")
-                else:
-                    logger.info(f"SSH command on {resource_id} succeeded with status {exit_status}. Output: {output}")
-                ssh.close()
-            except Exception as e:
-                logger.error(f"Error running agent command on {resource_id}: {str(e)}")
+                try:
+                    os.chmod(key_path, 0o400)
+                    key = paramiko.RSAKey.from_private_key_file(key_path)
+                    ssh = paramiko.SSHClient()
+                    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                    ssh.connect(ip_address, username="ubuntu", pkey=key)
+
+                    check_cmd = "if [ -x /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl ]; then echo 'installed'; else echo 'not installed'; fi"
+                    stdin, stdout, stderr = ssh.exec_command(check_cmd)
+                    status = stdout.read().decode('utf-8').strip()
+                    if status == 'installed':
+                        logger.info(f"CloudWatch agent already installed on {resource_id}, skipping installation.")
+                        ssh.close()
+                        continue
+
+                    sftp = ssh.open_sftp()
+                    local_script_path = os.path.join(os.path.dirname(__file__), "install_cloudwatchagent.sh")
+                    remote_script_path = "/home/ubuntu/install_cloudwatchagent.sh"
+                    sftp.put(local_script_path, remote_script_path)
+                    sftp.close()
+
+                    agent_command = f"chmod +x {remote_script_path} && sudo bash {remote_script_path}"
+                    stdin, stdout, stderr = ssh.exec_command(agent_command)
+                    exit_status = stdout.channel.recv_exit_status()
+                    output = stdout.read().decode('utf-8')
+                    errors = stderr.read().decode('utf-8')
+                    if exit_status != 0:
+                        logger.error(f"SSH command on {resource_id} failed with status {exit_status}. Errors: {errors}")
+                    else:
+                        logger.info(f"SSH command on {resource_id} succeeded with status {exit_status}. Output: {output}")
+                    ssh.close()
+                except Exception as e:
+                    logger.error(f"Error running agent command on {resource_id}: {str(e)}")
+        else:
+            logger.info(f"Skipping CloudWatch agent installation since service is {service} (not EC2).")
 
         return jsonify({
             'message': 'Monitoring configured successfully!',

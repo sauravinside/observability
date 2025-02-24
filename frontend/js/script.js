@@ -202,6 +202,10 @@ function updateResourceListUI(resources) {
     resourceList.innerHTML = '';
     
     resources.forEach(resource => {
+        // Only show key upload if the selected service is EC2
+        const keyUploadHTML = (selectedService === "EC2") 
+            ? `<input type="file" id="key-${resource.Id}" class="key-upload" style="display:none;" accept=".pem">` 
+            : '';
         const div = document.createElement('div');
         div.className = 'resource-item';
         div.innerHTML = `
@@ -215,19 +219,22 @@ function updateResourceListUI(resources) {
                     Private: ${resource.PrivateIpAddress ? resource.PrivateIpAddress : 'N/A'}
                 </span>
             </label>
-            <input type="file" id="key-${resource.Id}" class="key-upload" style="display:none;" accept=".pem">
+            ${keyUploadHTML}
         `;
+        // When a resource checkbox is changed, update the selection and navigation buttons
         div.querySelector('input[type="checkbox"]').addEventListener('change', (e) => handleResourceSelection(e, resource));
         
-        // Listen for key file uploads
-        div.querySelector('.key-upload').addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                selectedKeys[resource.Id] = file;
-            } else {
-                delete selectedKeys[resource.Id];
-            }
-        });
+        // Only add file upload event if service is EC2
+        if (selectedService === "EC2" && keyUploadHTML !== '') {
+            div.querySelector('.key-upload').addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    selectedKeys[resource.Id] = file;
+                } else {
+                    delete selectedKeys[resource.Id];
+                }
+            });
+        }
         resourceList.appendChild(div);
     });
 }
