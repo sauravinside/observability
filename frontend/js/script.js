@@ -340,6 +340,21 @@ function validateCurrentStep() {
 }
 
 async function submitConfiguration() {
+    // Show progress bar and initialize progress value to 0
+    const progressContainer = document.getElementById('progressContainer');
+    const progressBar = document.getElementById('progressBar');
+    progressContainer.style.display = 'block';
+    progressBar.style.width = '0%';
+
+    let progress = 0;
+    // Simulate progress increment (e.g., every second increase by 5% up to 95%)
+    const progressInterval = setInterval(() => {
+        if (progress < 95) {
+            progress += 5;
+            progressBar.style.width = progress + '%';
+        }
+    }, 1000);
+
     const config = {
         service: selectedService,
         region: selectedResources.length > 0 ? selectedResources[0].Region : '',
@@ -373,15 +388,26 @@ async function submitConfiguration() {
             method: 'POST',
             body: formData
         });
+        // Clear the simulated progress timer
+        clearInterval(progressInterval);
+        // Set progress to 100%
+        progress = 100;
+        progressBar.style.width = '100%';
         const contentType = response.headers.get("content-type");
         if (contentType && contentType.indexOf("application/json") !== -1) {
             const result = await response.json();
-            showSuccess(result);
+            // Optionally, wait a bit before hiding the progress bar
+            setTimeout(() => {
+                progressContainer.style.display = 'none';
+                showSuccess(result);
+            }, 500);
         } else {
             const text = await response.text();
             throw new Error("Non-JSON response received: " + text.substring(0, 100));
         }
     } catch (error) {
+        clearInterval(progressInterval);
+        progressContainer.style.display = 'none';
         showError("Failed to configure monitoring: " + error.message);
     }
 }
