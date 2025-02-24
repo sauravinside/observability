@@ -6,6 +6,7 @@ import os
 import paramiko
 import subprocess
 import shutil
+import time
 from botocore.exceptions import ClientError
 from flask_cors import CORS
 from typing import Dict, List, Union
@@ -161,8 +162,91 @@ AWS_SERVICES = {
     }
 }
 
+# Helper function to ensure required IAM role and policies on EC2 instances
+def ensure_instance_role(instance_id: str, region: str) -> None:
+    required_policy_arns = [
+        'arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess',
+        'arn:aws:iam::aws:policy/AmazonSNSFullAccess',
+        'arn:aws:iam::aws:policy/AmazonSSMFullAccess',
+        'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore',
+        'arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy',
+        'arn:aws:iam::aws:policy/CloudWatchFullAccess'
+    ]
+    ec2 = create_aws_client('ec2', region)
+    iam = boto3.client('iam')
+    try:
+        desc = ec2.describe_instances(InstanceIds=[instance_id])
+        instance = desc['Reservations'][0]['Instances'][0]
+    except Exception as e:
+        logger.error(f"Error fetching details for instance {instance_id}: {str(e)}")
+        return
+
+    # If the instance already has an IAM instance profile attached:
+    if 'IamInstanceProfile' in instance:
+        profile_arn = instance['IamInstanceProfile']['Arn']
+        profile_name = profile_arn.split('/')[-1]
+        try:
+            profile_details = iam.get_instance_profile(InstanceProfileName=profile_name)
+            if profile_details['InstanceProfile']['Roles']:
+                role_name = profile_details['InstanceProfile']['Roles'][0]['RoleName']
+                attached = iam.list_attached_role_policies(RoleName=role_name)['AttachedPolicies']
+                attached_arns = [p['PolicyArn'] for p in attached]
+                for policy_arn in required_policy_arns:
+                    if policy_arn not in attached_arns:
+                        iam.attach_role_policy(RoleName=role_name, PolicyArn=policy_arn)
+            else:
+                role_name = "MonitoringRole"
+                _create_and_attach_role(iam, ec2, instance_id, role_name, required_policy_arns)
+        except Exception as e:
+            logger.error(f"Error processing instance profile for {instance_id}: {str(e)}")
+    else:
+        role_name = "MonitoringRole"
+        _create_and_attach_role(iam, ec2, instance_id, role_name, required_policy_arns)
+
+def _create_and_attach_role(iam, ec2, instance_id: str, role_name: str, required_policy_arns: List[str]) -> None:
+    try:
+        iam.get_role(RoleName=role_name)
+    except iam.exceptions.NoSuchEntityException:
+        trust_policy = {
+            "Version": "2012-10-17",
+            "Statement": [{
+                "Effect": "Allow",
+                "Principal": {"Service": "ec2.amazonaws.com"},
+                "Action": "sts:AssumeRole"
+            }]
+        }
+        iam.create_role(RoleName=role_name, AssumeRolePolicyDocument=json.dumps(trust_policy))
+    attached = iam.list_attached_role_policies(RoleName=role_name)['AttachedPolicies']
+    attached_arns = [p['PolicyArn'] for p in attached]
+    for policy_arn in required_policy_arns:
+        if policy_arn not in attached_arns:
+            iam.attach_role_policy(RoleName=role_name, PolicyArn=policy_arn)
+    # Use an instance profile name distinct from the role name
+    instance_profile_name = role_name + "Profile"
+    try:
+        iam.get_instance_profile(InstanceProfileName=instance_profile_name)
+    except iam.exceptions.NoSuchEntityException:
+        iam.create_instance_profile(InstanceProfileName=instance_profile_name)
+        iam.add_role_to_instance_profile(InstanceProfileName=instance_profile_name, RoleName=role_name)
+        time.sleep(10)
+    profile = iam.get_instance_profile(InstanceProfileName=instance_profile_name)
+    profile_arn = profile['InstanceProfile']['Arn']
+    associations = ec2.describe_iam_instance_profile_associations(
+        Filters=[{'Name': 'instance-id', 'Values': [instance_id]}]
+    )
+    if associations['IamInstanceProfileAssociations']:
+        association_id = associations['IamInstanceProfileAssociations'][0]['AssociationId']
+        ec2.replace_iam_instance_profile_association(
+            IamInstanceProfile={'Arn': profile_arn},
+            AssociationId=association_id
+        )
+    else:
+        ec2.associate_iam_instance_profile(
+            IamInstanceProfile={'Arn': profile_arn},
+            InstanceId=instance_id
+        )
+
 def setup_nginx() -> None:
-    """Setup nginx, frontend files, and reverse proxy configuration"""
     try:
         os.makedirs('/var/www/html/css', exist_ok=True)
         os.makedirs('/var/www/html/js', exist_ok=True)
@@ -187,6 +271,11 @@ def setup_nginx() -> None:
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                 proxy_set_header X-Forwarded-Proto $scheme;
+
+                proxy_connect_timeout 600;
+                proxy_send_timeout 600;
+                proxy_read_timeout 600;
+                send_timeout 600;
             }
         }
         """
@@ -216,7 +305,6 @@ def create_aws_client(service: str, region: str = None) -> boto3.client:
 
 @app.route('/api/services')
 def get_services() -> Dict:
-    """Get available AWS services for monitoring"""
     try:
         services = list(AWS_SERVICES.keys())
         return jsonify(services)
@@ -237,17 +325,14 @@ def get_regions() -> Dict:
 
 @app.route('/api/resources/<service>', methods=['GET'])
 def get_resources_all_regions(service: str) -> dict:
-    """Get resources for the specified service from all AWS regions concurrently"""
     try:
         service_config = AWS_SERVICES.get(service.upper())
         if not service_config:
             return jsonify({'error': 'Invalid service'}), 400
 
-        # Get list of all AWS regions
         ec2 = create_aws_client('ec2', region='us-east-1')
         response = ec2.describe_regions()
         regions = [region['RegionName'] for region in response['Regions']]
-
         resources = []
 
         def fetch_resources_for_region(region):
@@ -348,18 +433,16 @@ def get_resources_all_regions(service: str) -> dict:
                             'Type': 'S3 Bucket',
                             'State': 'Active',
                             'Name': bucket['Name'],
-                            'Region': region  # S3 buckets are global; region used here for display purposes
+                            'Region': region
                         })
             except Exception as region_error:
                 logger.warning(f"Could not fetch resources for service {service} in region {region}: {str(region_error)}")
             return region_resources
 
-        # Fetch resources concurrently from all regions.
         with ThreadPoolExecutor(max_workers=len(regions)) as executor:
             future_to_region = {executor.submit(fetch_resources_for_region, region): region for region in regions}
             for future in as_completed(future_to_region):
                 resources.extend(future.result())
-
         return jsonify(resources)
     except Exception as e:
         logger.error(f"Error fetching resources for {service} across all regions: {str(e)}")
@@ -367,12 +450,10 @@ def get_resources_all_regions(service: str) -> dict:
 
 @app.route('/api/metrics/<service>')
 def get_metrics(service: str) -> Dict:
-    """Get available metrics for specified service"""
     try:
         service_config = AWS_SERVICES.get(service.upper())
         if not service_config:
             return jsonify({'error': 'Invalid service'}), 400
-            
         return jsonify(service_config['metrics'])
     except Exception as e:
         logger.error(f"Error fetching metrics for {service}: {str(e)}")
@@ -381,25 +462,18 @@ def get_metrics(service: str) -> Dict:
 @app.route('/api/configure', methods=['POST'])
 def configure_monitoring():
     try:
-        # Determine if we're receiving multipart form data.
         if request.content_type.startswith('multipart/form-data'):
             config_data = request.form.get('config')
             if not config_data:
                 return jsonify({'error': 'Missing configuration data'}), 400
             data = json.loads(config_data)
-            
-            # Process key file uploads
             uploaded_keys = {}
             upload_folder = os.path.join(os.getcwd(), 'uploaded_keys')
             os.makedirs(upload_folder, exist_ok=True)
-            # Loop over all files in the request.
             for field_name, file in request.files.items():
-                # Expect field names to follow the pattern: key_<resourceId>
                 file_path = os.path.join(upload_folder, file.filename)
                 file.save(file_path)
                 uploaded_keys[field_name] = file_path
-            
-            # Attach uploaded key paths to the configuration data
             data['uploaded_keys'] = uploaded_keys
         else:
             data = request.get_json()
@@ -414,7 +488,6 @@ def configure_monitoring():
 
         region = data['region']
         service = data['service'].upper()
-        # Expect each resource to be a dict with at least 'Id' and 'PrivateIpAddress'
         resources = data['resources']
         metrics = data['metrics']
         alerts = data['alerts']
@@ -427,12 +500,9 @@ def configure_monitoring():
         sns = create_aws_client('sns', region)
         cloudwatch = create_aws_client('cloudwatch', region)
 
-        # Build a list of resource IDs (whether resources are strings or dicts)
         resource_ids = [r['Id'] if isinstance(r, dict) else r for r in resources]
-        # Define dashboard_name here to ensure it is always available
         dashboard_name = f"{service}-Monitor_{'-'.join(resource_ids)}"
 
-        # Create SNS topic
         topic_name = f"{service}_Monitoring_Alerts_{'-'.join(resource_ids)}"
         try:
             topic_response = sns.create_topic(Name=topic_name)
@@ -441,14 +511,12 @@ def configure_monitoring():
             logger.error(f"Error creating SNS topic: {str(e)}")
             return jsonify({'error': f'Failed to create SNS topic: {str(e)}'}), 500
 
-        # Create CloudWatch alarms
         alarm_arns = []
         if alerts:
             for resource in resources:
                 resource_id = resource['Id'] if isinstance(resource, dict) else resource
                 for metric in metrics:
                     try:
-                        # Build dimensions based on service and metric
                         dimensions = [{'Name': service_config['dimension_key'], 'Value': resource_id}]
                         if 'dimension' in metric:
                             dimensions.append(metric['dimension'])
@@ -460,7 +528,6 @@ def configure_monitoring():
                                     {'Name': 'device', 'Value': 'xvda1'},
                                     {'Name': 'fstype', 'Value': 'ext4'}
                                 ])
-                        # Create Warning Alarm
                         warning_alarm_name = f"{resource_id}-{metric['name']}-Warning"
                         warning_alarm_config = {
                             'AlarmName': warning_alarm_name,
@@ -479,7 +546,6 @@ def configure_monitoring():
                         cloudwatch.put_metric_alarm(**warning_alarm_config)
                         alarm_arns.append(warning_alarm_name)
 
-                        # Create Critical Alarm
                         critical_alarm_name = f"{resource_id}-{metric['name']}-Critical"
                         critical_alarm_config = {
                             'AlarmName': critical_alarm_name,
@@ -502,7 +568,13 @@ def configure_monitoring():
                         logger.error(f"Error creating alarms for {resource_id}: {str(e)}")
                         return jsonify({'error': f'Failed to create alarms for {resource_id}: {str(e)}'}), 500
 
-        # Create CloudWatch dashboard
+        # Ensure IAM roles are correct for EC2 instances.
+        if service == 'EC2':
+            for resource in resources:
+                instance_id = resource['Id']
+                ensure_instance_role(instance_id, region)
+
+        # Dashboard creation
         widgets = []
         for metric in metrics:
             metric_data = [[metric['namespace'], metric['name']]]
@@ -532,15 +604,16 @@ def configure_monitoring():
                 }
             })
         try:
-            cloudwatch.put_dashboard(
+            response = cloudwatch.put_dashboard(
                 DashboardName=dashboard_name,
                 DashboardBody=json.dumps({"widgets": widgets})
             )
+            logger.info(f"Dashboard creation response: {response}")
         except ClientError as e:
             logger.error(f"Error creating dashboard: {str(e)}")
             return jsonify({'error': f'Failed to create dashboard: {str(e)}'}), 500
 
-        # Copy install_cloudwatchagent.sh to each selected instance and execute it.
+        # Process CloudWatch agent installation on each instance.
         for resource in resources:
             if isinstance(resource, dict):
                 resource_id = resource.get('Id')
@@ -553,7 +626,6 @@ def configure_monitoring():
                 logger.error(f"No private IP found for resource: {resource_id}")
                 continue
 
-            # The key file is expected under a field named "key_<resourceId>"
             key_field = f"key_{resource_id}"
             key_path = data.get('uploaded_keys', {}).get(key_field)
             if not key_path:
@@ -561,14 +633,12 @@ def configure_monitoring():
                 continue
 
             try:
-                # Set proper permissions on the key file.
                 os.chmod(key_path, 0o400)
                 key = paramiko.RSAKey.from_private_key_file(key_path)
                 ssh = paramiko.SSHClient()
                 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
                 ssh.connect(ip_address, username="ubuntu", pkey=key)
 
-                # Check if CloudWatch agent is already installed.
                 check_cmd = "if [ -x /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl ]; then echo 'installed'; else echo 'not installed'; fi"
                 stdin, stdout, stderr = ssh.exec_command(check_cmd)
                 status = stdout.read().decode('utf-8').strip()
@@ -577,26 +647,21 @@ def configure_monitoring():
                     ssh.close()
                     continue
 
-                # Use SFTP to copy install_cloudwatchagent.sh to the remote server.
                 sftp = ssh.open_sftp()
                 local_script_path = os.path.join(os.path.dirname(__file__), "install_cloudwatchagent.sh")
                 remote_script_path = "/home/ubuntu/install_cloudwatchagent.sh"
                 sftp.put(local_script_path, remote_script_path)
                 sftp.close()
 
-                # Define the command to set executable permissions and run the script.
                 agent_command = f"chmod +x {remote_script_path} && sudo bash {remote_script_path}"
                 stdin, stdout, stderr = ssh.exec_command(agent_command)
                 exit_status = stdout.channel.recv_exit_status()
                 output = stdout.read().decode('utf-8')
                 errors = stderr.read().decode('utf-8')
-
-                logger.info(f"SSH command on {resource_id} exited with status {exit_status}")
-                if output:
-                    logger.info(f"Output from {resource_id}: {output}")
-                if errors:
-                    logger.error(f"Errors from {resource_id}: {errors}")
-
+                if exit_status != 0:
+                    logger.error(f"SSH command on {resource_id} failed with status {exit_status}. Errors: {errors}")
+                else:
+                    logger.info(f"SSH command on {resource_id} succeeded with status {exit_status}. Output: {output}")
                 ssh.close()
             except Exception as e:
                 logger.error(f"Error running agent command on {resource_id}: {str(e)}")
@@ -619,9 +684,7 @@ if __name__ == '__main__':
         sts = create_aws_client('sts')
         sts.get_caller_identity()
         logger.info("AWS credentials verified successfully")
-        
         setup_nginx()
-        
         app.run(host='0.0.0.0', port=5000, debug=False)
     except Exception as e:
         logger.error(f"Startup error: {str(e)}")

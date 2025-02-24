@@ -297,7 +297,7 @@ function validateCurrentStep() {
 async function submitConfiguration() {
     const config = {
         service: document.getElementById('service').value,
-        // Since the user does not select a region in step 1, we use the region of the first selected resource.
+        // Since the region isn't chosen by the user, use the region of the first selected resource.
         region: selectedResources.length > 0 ? selectedResources[0].Region : '',
         resources: selectedResources,
         metrics: selectedMetrics,
@@ -329,16 +329,16 @@ async function submitConfiguration() {
             method: 'POST',
             body: formData
         });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Failed to configure monitoring');
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+            const result = await response.json();
+            showSuccess(result);
+        } else {
+            const text = await response.text();
+            throw new Error("Non-JSON response received: " + text.substring(0, 100));
         }
-
-        const result = await response.json();
-        showSuccess(result);
     } catch (error) {
-        showError('Failed to configure monitoring: ' + error.message);
+        showError("Failed to configure monitoring: " + error.message);
     }
 }
 
