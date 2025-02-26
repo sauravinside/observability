@@ -52,7 +52,7 @@ nav ul {
     display: flex;
     list-style: none;
     gap: 2rem;
-    flex-direction: column;
+    /* flex-direction: column; */
 }
 
 nav a {
