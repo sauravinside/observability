@@ -587,6 +587,9 @@ def configure_monitoring():
         # Ensure IAM roles are correct for EC2 instances.
         if service == 'EC2':
             for resource in resources:
+                instance_id = resource['Id']
+                ensure_instance_role(instance_id, region)
+            for resource in resources:
                 if isinstance(resource, dict):
                     resource_id = resource.get('Id')
                     ip_address = resource.get('PrivateIpAddress')
