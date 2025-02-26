@@ -260,22 +260,29 @@ def setup_nginx() -> None:
 
         nginx_config = """
         server {
-            listen 80;
-            server_name _;
+        listen 80;
+        server_name _;
 
-            location / {
-                root /var/www/html;
-                try_files $uri $uri/ /index.html;
-            }
-
-            location /api {
-                proxy_pass http://localhost:5000;
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto $scheme;
-            }
+        # Serve static files under /cloudwatch
+        location /cloudwatch/ {
+            alias /var/www/html/;
+            try_files $uri $uri/ /cloudwatch/index.html;
         }
+
+        # Proxy API calls under /cloudwatch/api
+        location /cloudwatch/api/ {
+            proxy_pass http://localhost:5000/api/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # Optionally, block or redirect other requests
+        location / {
+            return 404;
+        }
+    }
         """
         
         temp_path = '/tmp/nginx_default'

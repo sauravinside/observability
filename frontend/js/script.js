@@ -38,7 +38,7 @@ function setupEventListeners() {
 }
 
 async function fetchServices() {
-    const response = await fetch('/api/services');
+    const response = await fetch('/cloudwatch/api/services');
     if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -76,7 +76,7 @@ async function handleServiceChange() {
     const service = document.getElementById('service').value;
     if (!service) return;
     try {
-        const response = await fetch(`/api/metrics/${service}`);
+        const response = await fetch(`/cloudwatch/api/metrics/${service}`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -124,7 +124,7 @@ function nextStep() {
                 return;
             }
             // Fetch resources for the chosen service
-            fetch(`/api/resources/${selectedService}`)
+            fetch(`/cloudwatch/api/resources/${selectedService}`)
                 .then(response => {
                     if (!response.ok) {
                         throw new Error('Failed to fetch resources');
@@ -141,7 +141,7 @@ function nextStep() {
                 .catch(error => showError(error.message));
         } else if (currentStep === 2) {
             // Before moving to step 3, fetch the metrics for the selected service
-            fetch(`/api/metrics/${selectedService}`)
+            fetch(`/cloudwatch/api/metrics/${selectedService}`)
                 .then(response => {
                     if (!response.ok) {
                         throw new Error('Failed to fetch metrics');
@@ -391,7 +391,7 @@ async function submitConfiguration() {
     });
 
     try {
-        const response = await fetch('/api/configure', {
+        const response = await fetch('/cloudwatch/api/configure', {
             method: 'POST',
             body: formData
         });
