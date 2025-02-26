@@ -58,7 +58,7 @@
                     </div>
                     
                     {% if service_status == 'running' %}
-                    <a href="http://{{ request.host.split(':')[0] }}:3000" target="_blank" class="btn btn-primary">
+                    <a id="redirect-btn" href="http://{{ request.host.split(':')[0] }}:9000" class="btn btn-primary">
                         Open Grafana Dashboard
                     </a>
                     {% else %}

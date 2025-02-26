@@ -78,7 +78,28 @@ sudo systemctl start cloudwatch_monitoring
 sudo systemctl enable cloudwatch_monitoring
 sudo systemctl stop cloudwatch_monitoring
 
-#!/bin/bash
+# Create systemd service for Grafana application
+sudo tee /etc/systemd/system/grafanamonitoring.service > /dev/null << 'EOF'
+[Unit]
+Description=Grafana Monitoring Application
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/opt/observability/grafana
+ExecStart=sudo /usr/bin/python3 /opt/observability/grafana/app.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Reload systemd daemon and start the CloudWatch Monitoring service
+sudo systemctl daemon-reload
+sudo systemctl start grafanamonitoring
+sudo systemctl enable grafanamonitoring
+sudo systemctl stop grafanamonitoring
 
 # Create the systemd service file for main app
 sudo tee /etc/systemd/system/observability.service > /dev/null << 'EOF'
