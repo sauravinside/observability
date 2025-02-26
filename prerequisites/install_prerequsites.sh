@@ -63,8 +63,8 @@ After=network.target
 
 [Service]
 User=ubuntu
-WorkingDirectory=/opt/observability/main/cloudwatch/aws-monitoring-tool/backend
-ExecStart=sudo /usr/bin/python3 /opt/observability/main/cloudwatch/aws-monitoring-tool/backend/app.py
+WorkingDirectory=/opt/observability/cloudwatch/backend
+ExecStart=sudo /usr/bin/python3 /opt/observability/cloudwatch/backend/app.py
 Restart=always
 RestartSec=10
 
