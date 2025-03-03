@@ -101,6 +101,33 @@ sudo systemctl start grafanamonitoring
 sudo systemctl enable grafanamonitoring
 sudo systemctl stop grafanamonitoring
 
+# Create the systemd service file for EKS app
+sudo tee /etc/systemd/system/eksmonitoring.service > /dev/null << 'EOF'
+[Unit]
+Description=EKS Monitoring Portal
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/opt/observability/EKS
+ExecStart=/usr/bin/python3 /opt/observability/EKS/app.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Reload systemd daemon
+sudo systemctl daemon-reload
+
+# Enable and start the service
+sudo systemctl enable eksmonitoring.service
+sudo systemctl start eksmonitoring.service
+sudo systemctl stop eksmonitoring.service
+
+# Check service status
+sudo systemctl status eksmonitoring.service
+
 # Create the systemd service file for main app
 sudo tee /etc/systemd/system/observability.service > /dev/null << 'EOF'
 [Unit]

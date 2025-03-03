@@ -54,7 +54,7 @@
           </div>
           
           {% if service_status == 'running' %}
-          <a href="http://{{ request.host }}" target="_blank" class="btn btn-primary">
+          <a id="redirect-btn" href="http://{{ request.host.split(':')[0] }}:7000" class="btn btn-primary">
             Access EKS Monitoring Tools
           </a>
           {% else %}
