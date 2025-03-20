@@ -33,39 +33,3 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl enable node_exporter
 sudo systemctl start node_exporter
-
-# #!/bin/bash
-# # scripts/install_node_exporter.sh
-
-# # Download Node Exporter
-# cd /tmp
-# wget https://github.com/prometheus/node_exporter/releases/download/v1.4.0/node_exporter-1.4.0.linux-amd64.tar.gz
-# tar xvfz node_exporter-*.tar.gz
-# cd node_exporter-*
-
-# # Copy binary to the correct location
-# cp node_exporter /usr/local/bin/
-
-# # Create Node Exporter systemd service
-# cat > /etc/systemd/system/node_exporter.service << EOF
-# [Unit]
-# Description=Node Exporter
-# Wants=network-online.target
-# After=network-online.target
-
-# [Service]
-# User=root
-# Group=root
-# Type=simple
-# ExecStart=/usr/local/bin/node_exporter
-
-# [Install]
-# WantedBy=multi-user.target
-# EOF
-
-# # Enable and start Node Exporter
-# systemctl daemon-reload
-# systemctl enable node_exporter
-# systemctl start node_exporter
-
-# echo "Node Exporter installation completed"

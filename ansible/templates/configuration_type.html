@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Select Configuration Type | AWS Automation Portal</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="bg-gray-100 font-sans">
+    <div class="min-h-screen flex flex-col">
+        <header class="bg-blue-800 text-white shadow-lg">
+            <div class="container mx-auto px-4 py-6">
+                <h1 class="text-4xl font-bold">AWS Automation Portal</h1>
+                <p class="text-xl mt-2">Configure your infrastructure with ease</p>
+            </div>
+        </header>
+        
+        <main class="flex-grow container mx-auto px-4 py-8">
+            <div class="bg-white rounded-lg shadow-xl p-8 max-w-3xl mx-auto">
+                <h2 class="text-3xl font-bold text-gray-800 mb-6">What would you like to configure?</h2>
+                
+                <form action="{{ url_for('select_monitoring_server') }}" method="post">
+                    <div class="flex flex-col space-y-4 mb-8">
+                        <div class="bg-blue-50 hover:bg-blue-100 border-2 border-blue-200 rounded-lg p-6 cursor-pointer transition duration-300">
+                            <label class="flex items-center space-x-3">
+                                <input type="radio" name="config_type" value="monitoring" class="form-radio h-5 w-5 text-blue-600" required>
+                                <div>
+                                    <span class="text-xl font-semibold text-blue-800">Monitoring Setup</span>
+                                    <p class="text-gray-600 mt-1">Deploy Prometheus, Grafana, and other monitoring tools on your instances</p>
+                                </div>
+                            </label>
+                        </div>
+                        
+                        <div class="bg-green-50 hover:bg-green-100 border-2 border-green-200 rounded-lg p-6 cursor-pointer transition duration-300">
+                            <label class="flex items-center space-x-3">
+                                <input type="radio" name="config_type" value="script" class="form-radio h-5 w-5 text-green-600">
+                                <div>
+                                    <span class="text-xl font-semibold text-green-800">Custom Script</span>
+                                    <p class="text-gray-600 mt-1">Deploy and run custom scripts on your instances</p>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="flex justify-center">
+                        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-xl transition duration-300 transform hover:scale-105">
+                            Continue
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </main>
+        
+        <footer class="bg-gray-800 text-white py-6">
+            <div class="container mx-auto px-4 text-center">
+                <p>&copy; 2025 AWS Automation Portal</p>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>

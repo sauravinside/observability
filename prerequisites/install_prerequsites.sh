@@ -4,15 +4,15 @@
 sudo add-apt-repository -y ppa:deadsnakes/ppa
 sudo apt update
 # Install common utilities and Python dependencies
-sudo apt install -y unzip wget nginx python3 python3-pip python3-flask-cors python3-paramiko python3-scp python3-flask python3-boto3
+sudo apt install -y unzip wget nginx ansible python3 python3-pip python3-flask-cors python3-paramiko python3-scp python3-flask python3-boto3
 
 # Install AWS CLI (Corrected)
-curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-unzip awscliv2.zip
+sudo curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+sudo unzip awscliv2.zip
 sudo ./aws/install
 
 # Install CloudWatch agent
-wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+sudo wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
 sudo dpkg -i -E ./amazon-cloudwatch-agent.deb
 
 # Create CloudWatch agent configuration
@@ -53,7 +53,7 @@ sudo systemctl start amazon-cloudwatch-agent
 sudo systemctl enable amazon-cloudwatch-agent
 
 # Clean up installation files
-rm amazon-cloudwatch-agent.deb awscliv2.zip
+sudo rm amazon-cloudwatch-agent.deb awscliv2.zip
 
 # Create systemd service for CloudWatch Monitoring application
 sudo tee /etc/systemd/system/cloudwatch_monitoring.service > /dev/null << 'EOF'
@@ -125,8 +125,29 @@ sudo systemctl enable eksmonitoring.service
 sudo systemctl start eksmonitoring.service
 sudo systemctl stop eksmonitoring.service
 
-# Check service status
-sudo systemctl status eksmonitoring.service
+# Create the systemd service file for Ansible app
+sudo tee /etc/systemd/system/ansiblemonitoring.service > /dev/null << 'EOF'
+[Unit]
+Description=Ansible Monitoring Portal
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/opt/observability/ansible
+ExecStart=/usr/bin/python3 /opt/observability/ansible/app.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Reload systemd daemon
+sudo systemctl daemon-reload
+
+# Enable and start the service
+sudo systemctl enable ansiblemonitoring.service
+sudo systemctl start ansiblemonitoring.service
+sudo systemctl stop ansiblemonitoring.service
 
 # Create the systemd service file for main app
 sudo tee /etc/systemd/system/observability.service > /dev/null << 'EOF'

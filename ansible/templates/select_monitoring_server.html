@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Select Monitoring Server | AWS Automation Portal</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@2.8.2/dist/alpine.min.js" defer></script>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div class="min-h-screen flex flex-col">
+        <header class="bg-blue-800 text-white shadow-lg">
+            <div class="container mx-auto px-4 py-6">
+                <h1 class="text-4xl font-bold">AWS Automation Portal</h1>
+                <p class="text-xl mt-2">Configure your infrastructure with ease</p>
+            </div>
+        </header>
+        
+        <main class="flex-grow container mx-auto px-4 py-8" x-data="{ 
+            instances: [], 
+            regions: [],
+            selectedRegion: 'us-east-1',
+            selectedInstance: null,
+            loading: true,
+            keyUploaded: {},
+            
+            fetchInstances() {
+                this.loading = true;
+                fetch(`/get_ec2_instances?region=${this.selectedRegion}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        this.instances = data.instances;
+                        this.regions = data.regions;
+                        this.loading = false;
+                    })
+                    .catch(error => {
+                        console.error('Error fetching instances:', error);
+                        this.loading = false;
+                    });
+            },
+            
+            uploadKey(instanceId, event) {
+                const fileInput = event.target;
+                if (fileInput.files.length === 0) return;
+                
+                const file = fileInput.files[0];
+                const formData = new FormData();
+                formData.append('key_file', file);
+                
+                fetch(`/upload_key/${instanceId}`, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        this.keyUploaded[instanceId] = true;
+                    } else {
+                        alert('Failed to upload key: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error uploading key:', error);
+                    alert('Error uploading key');
+                });
+            }
+        }" x-init="fetchInstances()">
+            <div class="bg-white rounded-lg shadow-xl p-8 max-w-5xl mx-auto">
+                <h2 class="text-3xl font-bold text-gray-800 mb-6">Select Monitoring Server</h2>
+                <p class="text-lg text-gray-600 mb-8">Choose the EC2 instance where you want to set up Prometheus and Grafana.</p>
+                
+                <div class="mb-6">
+                    <label for="region" class="block text-gray-700 font-semibold mb-2">Filter by Region:</label>
+                    <select 
+                        id="region" 
+                        x-model="selectedRegion" 
+                        @change="fetchInstances()"
+                        class="block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                    >
+                        <template x-for="region in regions" :key="region">
+                            <option :value="region" x-text="region"></option>
+                        </template>
+                    </select>
+                </div>
+                
+                <div class="overflow-x-auto">
+                    <template x-if="loading">
+                        <div class="flex justify-center items-center py-12">
+                            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-700"></div>
+                        </div>
+                    </template>
+                    
+                    <template x-if="!loading">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Select</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Instance ID</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Public IP</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Private IP</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Key Name</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Upload Key</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                <template x-for="instance in instances" :key="instance.id">
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <input 
+                                                type="radio" 
+                                                name="instance_select" 
+                                                :value="instance.id" 
+                                                @click="selectedInstance = instance"
+                                                class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300"
+                                            >
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap" x-text="instance.id"></td>
+                                        <td class="px-6 py-4 whitespace-nowrap" x-text="instance.public_ip"></td>
+                                        <td class="px-6 py-4 whitespace-nowrap" x-text="instance.private_ip"></td>
+                                        <td class="px-6 py-4 whitespace-nowrap" x-text="instance.key_name"></td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <template x-if="!keyUploaded[instance.id]">
+                                                <input 
+                                                    type="file" 
+                                                    @change="uploadKey(instance.id, $event)" 
+                                                    class="block w-full text-sm text-gray-500
+                                                           file:mr-4 file:py-2 file:px-4
+                                                           file:rounded-md file:border-0
+                                                           file:text-sm file:font-semibold
+                                                           file:bg-blue-50 file:text-blue-700
+                                                           hover:file:bg-blue-100"
+                                                >
+                                            </template>
+                                            <template x-if="keyUploaded[instance.id]">
+                                                <span class="text-green-600 font-medium">Key uploaded ✓</span>
+                                            </template>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </template>
+                </div>
+                
+                <form action="{{ url_for('select_monitoring_server_submit') }}" method="post" class="mt-8">
+                    <input type="hidden" name="monitoring_server" :value="JSON.stringify(selectedInstance)" x-ref="selectedInstanceInput">
+                    
+                    <div class="flex justify-center">
+                        <button 
+                            type="submit" 
+                            class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-xl transition duration-300 transform hover:scale-105"
+                            :disabled="!selectedInstance || !keyUploaded[selectedInstance?.id]"
+                            :class="{'opacity-50 cursor-not-allowed': !selectedInstance || !keyUploaded[selectedInstance?.id]}"
+                        >
+                            Continue
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </main>
+        
+        <footer class="bg-gray-800 text-white py-6">
+            <div class="container mx-auto px-4 text-center">
+                <p>&copy; 2025 AWS Automation Portal</p>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>

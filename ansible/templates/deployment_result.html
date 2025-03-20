@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deployment Result | AWS Automation Portal</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="bg-gray-100 font-sans">
+    <div class="min-h-screen flex flex-col">
+        <header class="bg-blue-800 text-white shadow-lg">
+            <div class="container mx-auto px-4 py-6">
+                <h1 class="text-4xl font-bold">AWS Automation Portal</h1>
+                <p class="text-xl mt-2">Configure your infrastructure with ease</p>
+            </div>
+        </header>
+        
+        <main class="flex-grow container mx-auto px-4 py-8">
+            <div class="bg-white rounded-lg shadow-xl p-8 max-w-4xl mx-auto">
+                <h2 class="text-3xl font-bold text-gray-800 mb-6">
+                    {% if result.success %}
+                        <span class="text-green-600">Deployment Successful</span>
+                    {% else %}
+                        <span class="text-red-600">Deployment Failed</span>
+                    {% endif %}
+                </h2>
+                
+                <div class="mb-8">
+                    <h3 class="text-xl font-medium text-gray-800 mb-4">Deployment Details:</h3>
+                    <div class="bg-gray-100 rounded-lg p-4 overflow-auto max-h-96">
+                        <pre class="whitespace-pre-wrap">{{ result.output }}</pre>
+                        
+                        {% if not result.success and result.error %}
+                            <h4 class="text-lg font-medium text-red-600 mt-4 mb-2">Error:</h4>
+                            <pre class="whitespace-pre-wrap text-red-600">{{ result.error }}</pre>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="mb-8">
+                    <h3 class="text-xl font-medium text-gray-800 mb-4">Deployment Summary:</h3>
+                    <div class="bg-white rounded-lg border border-gray-200 p-4">
+                        <div class="mb-4">
+                            <h4 class="text-lg font-medium text-blue-700">Monitoring Server</h4>
+                            <p><strong>Instance ID:</strong> {{ result.summary.monitoring_server.id }}</p>
+                            <p><strong>IP Address:</strong> {{ result.summary.monitoring_server.ip }}</p>
+                            <p><strong>Installed Tools:</strong></p>
+                            <ul class="list-disc ml-5 mt-1">
+                                {% for tool in result.summary.monitoring_server.tools %}
+                                    <li>{{ tool }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <h4 class="text-lg font-medium text-blue-700">Monitored Servers</h4>
+                            <ul class="list-disc ml-5 mt-1">
+                                {% for server in result.summary.monitored_servers %}
+                                    <li>{{ server.id }} ({{ server.ip }})</li>
+                                {% endfor %}
+                            </ul>
+                            <p class="mt-2"><strong>Installed Client Tools:</strong></p>
+                            <ul class="list-disc ml-5 mt-1">
+                                {% for tool in result.summary.client_tools %}
+                                    <li>{{ tool }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        
+                        <p class="text-sm text-gray-500 mt-2">Completed at: {{ result.summary.timestamp }}</p>
+                    </div>
+                </div>
+                
+                <div class="flex justify-center space-x-4">
+                    <a href="{{ url_for('index') }}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-xl transition duration-300">
+                        Return Home
+                    </a>
+                    
+                    {% if result.success %}
+                        <a href="#" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg text-xl transition duration-300">
+                            View Monitoring
+                        </a>
+                    {% else %}
+                        <button onclick="window.history.back()" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-6 rounded-lg text-xl transition duration-300">
+                            Go Back
+                        </button>
+                    {% endif %}
+                </div>
+
+                {% if result.success and result.grafana_url %}
+                    <div class="mt-6 flex flex-col md:flex-row gap-4 justify-center">
+                        <a href="{{ result.grafana_url }}" target="_blank" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg text-xl transition duration-300 flex items-center justify-center">
+                            <span>Access Grafana</span>
+                            <span class="ml-2 text-sm">(default login: admin/admin)</span>
+                        </a>
+                        
+                        <a href="{{ result.prometheus_url }}" target="_blank" class="bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 px-6 rounded-lg text-xl transition duration-300 flex items-center justify-center">
+                            Access Prometheus
+                        </a>
+                    </div>
+                {% endif %}
+
+            </div>
+        </main>
+        
+        <footer class="bg-gray-800 text-white py-6">
+            <div class="container mx-auto px-4 text-center">
+                <p>&copy; 2025 AWS Automation Portal</p>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>
