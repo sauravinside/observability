@@ -26,11 +26,11 @@ handler.setFormatter(formatter)
 app.logger.addHandler(handler)
 app.logger.setLevel(logging.INFO)
 
-BASE_DIR = "/opt/observability/EKS/"
-VARIABLES_FILE = f"{BASE_DIR}variables.sh"
-GKE_VARIABLES_FILE = f"{BASE_DIR}gke-variables.sh"
-SETUP_SCRIPT = "/opt/observability/EKS/monitoring_setup.sh"
-GKE_SETUP_SCRIPT = f"{BASE_DIR}gke_monitoring_setup.sh"
+# BASE_DIR = "/opt/observability/EKS"
+VARIABLES_FILE = "variables.sh"
+GKE_VARIABLES_FILE = "gke-variables.sh"
+SETUP_SCRIPT = "monitoring_setup.sh"
+GKE_SETUP_SCRIPT = "gke_monitoring_setup.sh"
 
 deployment_progress = {"progress": 0, "status": "Initializing..."}
 
@@ -90,7 +90,7 @@ def run_setup(script_file):
     text=True,
     env=os.environ.copy()
 )
-        app.logger.info("✅ Test log route hit!")
+        
         # Check if script executed successfully
         if result.returncode == 0:
             return {
