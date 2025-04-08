@@ -4,8 +4,28 @@ from pathlib import Path
 import os
 import time
 import json
+import logging
+from logging.handlers import RotatingFileHandler
 
 app = Flask(__name__)
+log_dir = "/home/ubuntu"
+log_file = os.path.join(log_dir, "flask-app.log")
+
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
+
+handler = RotatingFileHandler(log_file, maxBytes=1000000, backupCount=3)
+handler.setLevel(logging.INFO)
+
+formatter = logging.Formatter(
+    '[%(asctime)s] %(levelname)s in %(module)s: %(message)s'
+)
+handler.setFormatter(formatter)
+
+# Add handler to the Flask app's logger
+app.logger.addHandler(handler)
+app.logger.setLevel(logging.INFO)
+
 BASE_DIR = "/opt/observability/EKS/"
 VARIABLES_FILE = f"{BASE_DIR}variables.sh"
 GKE_VARIABLES_FILE = f"{BASE_DIR}gke-variables.sh"
@@ -70,7 +90,7 @@ def run_setup(script_file):
     text=True,
     env=os.environ.copy()
 )
-        
+        app.logger.info("✅ Test log route hit!")
         # Check if script executed successfully
         if result.returncode == 0:
             return {
@@ -188,6 +208,11 @@ def gke_deploy():
             "success": False,
             "message": f"❌ Failed to update configuration: {str(e)}"
         }), 500
+
+@app.route("/test-log")
+def test_log():
+    app.logger.info("✅ Test log route hit!")
+    return "Logged something to /home/ubuntu/flask-app.log"
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=7000, debug=True)
