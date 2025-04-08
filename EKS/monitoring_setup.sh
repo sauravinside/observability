@@ -4,7 +4,7 @@ set -e  # Exit on error
 
 clear
 
-source /opt/observability/EKS/variables.sh
+source ./variables.sh
 
 
 PROMETHEUS_CHART="prometheus-community/kube-prometheus-stack"
