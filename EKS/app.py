@@ -66,7 +66,8 @@ def run_setup(script_file):
             ["/bin/bash", str(script_path)],
             check=True,
             capture_output=True,
-            text=True
+            text=True,
+            env=os.environ.copy()
         )
         
         # Check if script executed successfully
