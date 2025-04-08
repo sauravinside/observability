@@ -136,7 +136,7 @@ def decumentation():
     return render_template("documentation.html")
 
 @app.route('/deployment-progress')
-def deployment_progress_stream():
+def deployment_progress():
     def generate():
         while deployment_progress["progress"] < 100:
             yield f"data: {json.dumps(deployment_progress)}\n\n"
