@@ -4,27 +4,27 @@ from pathlib import Path
 import os
 import time
 import json
-import logging
-from logging.handlers import RotatingFileHandler
+# import logging
+# from logging.handlers import RotatingFileHandler
 
 app = Flask(__name__)
-log_dir = "/home/ubuntu"
-log_file = os.path.join(log_dir, "flask-app.log")
+# log_dir = "/home/ubuntu"
+# log_file = os.path.join(log_dir, "flask-app.log")
 
-if not os.path.exists(log_dir):
-    os.makedirs(log_dir)
+# if not os.path.exists(log_dir):
+#     os.makedirs(log_dir)
 
-handler = RotatingFileHandler(log_file, maxBytes=1000000, backupCount=3)
-handler.setLevel(logging.INFO)
+# handler = RotatingFileHandler(log_file, maxBytes=1000000, backupCount=3)
+# handler.setLevel(logging.INFO)
 
-formatter = logging.Formatter(
-    '[%(asctime)s] %(levelname)s in %(module)s: %(message)s'
-)
-handler.setFormatter(formatter)
+# formatter = logging.Formatter(
+#     '[%(asctime)s] %(levelname)s in %(module)s: %(message)s'
+# )
+# handler.setFormatter(formatter)
 
-# Add handler to the Flask app's logger
-app.logger.addHandler(handler)
-app.logger.setLevel(logging.INFO)
+# # Add handler to the Flask app's logger
+# app.logger.addHandler(handler)
+# app.logger.setLevel(logging.INFO)
 
 # BASE_DIR = "/opt/observability/EKS"
 VARIABLES_FILE = "variables.sh"
@@ -136,7 +136,7 @@ def decumentation():
     return render_template("documentation.html")
 
 @app.route('/deployment-progress')
-def deployment_progress():
+def deployment_progress_stream():
     def generate():
         while deployment_progress["progress"] < 100:
             yield f"data: {json.dumps(deployment_progress)}\n\n"
