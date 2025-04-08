@@ -9,7 +9,7 @@ app = Flask(__name__)
 BASE_DIR = "/opt/observability/EKS/"
 VARIABLES_FILE = f"{BASE_DIR}variables.sh"
 GKE_VARIABLES_FILE = f"{BASE_DIR}gke-variables.sh"
-SETUP_SCRIPT = f"{BASE_DIR}monitoring_setup.sh"
+SETUP_SCRIPT = f"{BASE_DIR}/t/monitoring_setup.sh"
 GKE_SETUP_SCRIPT = f"{BASE_DIR}gke_monitoring_setup.sh"
 
 deployment_progress = {"progress": 0, "status": "Initializing..."}
