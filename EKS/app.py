@@ -46,6 +46,7 @@ def write_variables(updated_vars, var_file):
 
 def run_setup(script_file):
     try:
+        print(f"Running script: {script_file}")
         script_path = Path(script_file)
         
         # Check if script exists
@@ -198,4 +199,4 @@ def test_log():
     return "Logged something to /home/ubuntu/flask-app.log"
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=7000, debug=True, use_reloader=False)
+    app.run(host='0.0.0.0', port=7000, debug=False)
