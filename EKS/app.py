@@ -8,25 +8,8 @@ import json
 # from logging.handlers import RotatingFileHandler
 
 app = Flask(__name__)
-# log_dir = "/home/ubuntu"
-# log_file = os.path.join(log_dir, "flask-app.log")
 
-# if not os.path.exists(log_dir):
-#     os.makedirs(log_dir)
-
-# handler = RotatingFileHandler(log_file, maxBytes=1000000, backupCount=3)
-# handler.setLevel(logging.INFO)
-
-# formatter = logging.Formatter(
-#     '[%(asctime)s] %(levelname)s in %(module)s: %(message)s'
-# )
-# handler.setFormatter(formatter)
-
-# # Add handler to the Flask app's logger
-# app.logger.addHandler(handler)
-# app.logger.setLevel(logging.INFO)
-
-BASE_DIR = "/opt/observability/EKS"
+BASE_DIR = "/opt/observability/EKS/"
 VARIABLES_FILE = "variables.sh"
 GKE_VARIABLES_FILE = "gke-variables.sh"
 SETUP_SCRIPT = f"{BASE_DIR}monitoring_setup.sh"
@@ -215,4 +198,4 @@ def test_log():
     return "Logged something to /home/ubuntu/flask-app.log"
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=7000, debug=True)
+    app.run(host='0.0.0.0', port=7000, debug=True, use_reloader=False)
