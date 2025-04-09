@@ -4,8 +4,6 @@ from pathlib import Path
 import os
 import time
 import json
-# import logging
-# from logging.handlers import RotatingFileHandler
 
 app = Flask(__name__)
 
@@ -46,7 +44,6 @@ def write_variables(updated_vars, var_file):
 
 def run_setup(script_file):
     try:
-        print(f"Running script: {script_file}")
         script_path = Path(script_file)
         
         # Check if script exists
@@ -141,7 +138,6 @@ def deploy():
         deployment_progress = {"progress": 40, "status": "Preparing deployment..."}
         
         # Run setup script
-        print("process-completed till here")
         deployment_progress = {"progress": 60, "status": "Executing deployment script..."}
         result = run_setup(SETUP_SCRIPT)
         
@@ -200,4 +196,4 @@ def test_log():
     return "Logged something to /home/ubuntu/flask-app.log"
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=7000, debug=False, use_reloader=False)
+    app.run(host='0.0.0.0', port=7000, debug=True)
