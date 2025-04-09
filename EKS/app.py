@@ -200,4 +200,4 @@ def test_log():
     return "Logged something to /home/ubuntu/flask-app.log"
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=7000, debug=False)
+    app.run(host='0.0.0.0', port=7000, debug=False, use_reloader=False)
