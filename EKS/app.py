@@ -141,6 +141,7 @@ def deploy():
         deployment_progress = {"progress": 40, "status": "Preparing deployment..."}
         
         # Run setup script
+        print("process-completed till here")
         deployment_progress = {"progress": 60, "status": "Executing deployment script..."}
         result = run_setup(SETUP_SCRIPT)
         
