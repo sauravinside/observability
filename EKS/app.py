@@ -26,11 +26,11 @@ app = Flask(__name__)
 # app.logger.addHandler(handler)
 # app.logger.setLevel(logging.INFO)
 
-# BASE_DIR = "/opt/observability/EKS"
+BASE_DIR = "/opt/observability/EKS"
 VARIABLES_FILE = "variables.sh"
 GKE_VARIABLES_FILE = "gke-variables.sh"
-SETUP_SCRIPT = "monitoring_setup.sh"
-GKE_SETUP_SCRIPT = "gke_monitoring_setup.sh"
+SETUP_SCRIPT = f"{BASE_DIR}monitoring_setup.sh"
+GKE_SETUP_SCRIPT = f"{BASE_DIR}gke_monitoring_setup.sh"
 
 deployment_progress = {"progress": 0, "status": "Initializing..."}
 
