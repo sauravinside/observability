@@ -57,20 +57,20 @@ def run_setup(script_file):
         script_path.chmod(0o755)
         
         # Execute the script
-        # result = subprocess.run(
-        #     [str(script_path.absolute())],
-        #     check=True,
-        #     capture_output=True,
-        #     text=True
-        # )
         result = subprocess.run(
-    f"/bin/bash {script_path}",
-    shell=True,
-    check=True,
-    capture_output=True,
-    text=True,
-    env=os.environ.copy()
-)
+            [str(script_path.absolute())],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+#         result = subprocess.run(
+#     f"/bin/bash {script_path}",
+#     shell=True,
+#     check=True,
+#     capture_output=True,
+#     text=True,
+#     env=os.environ.copy()
+# )
         
         # Check if script executed successfully
         if result.returncode == 0:
