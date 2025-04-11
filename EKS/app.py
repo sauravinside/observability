@@ -4,8 +4,20 @@ from pathlib import Path
 import os
 import time
 import json
+import logging
 
 app = Flask(__name__)
+
+# Set up logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s %(levelname)s: %(message)s',
+    handlers=[
+        logging.FileHandler('/var/log/eksmonitoring.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 BASE_DIR = "/opt/observability/EKS/"
 VARIABLES_FILE = "variables.sh"
@@ -45,6 +57,11 @@ def write_variables(updated_vars, var_file):
 def run_setup(script_file):
     try:
         script_path = Path(script_file)
+
+        logger.info(f"Attempting to execute script: {script_path}")
+        logger.info(f"Current working directory: {os.getcwd()}")
+        logger.info(f"Current user: {os.getuid()}")
+        logger.info(f"Script exists: {script_path.exists()}")
         
         # Check if script exists
         if not script_path.exists():
@@ -57,12 +74,33 @@ def run_setup(script_file):
         script_path.chmod(0o755)
         
         # Execute the script
+        # result = subprocess.run(
+        #     [str(script_path.absolute())],
+        #     check=True,
+        #     capture_output=True,
+        #     text=True
+        # )
+
+        # *****************
+
         result = subprocess.run(
-            [str(script_path.absolute())],
+            ["/bin/bash", str(script_path)],
             check=True,
             capture_output=True,
-            text=True
+            text=True,
+            cwd=str(script_path.parent),
+            env={
+                **os.environ.copy(),
+                'PWD': str(script_path.parent),
+                'SHELL': '/bin/bash',
+                'PATH': '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+            }
         )
+        
+        logger.info(f"Script stdout: {result.stdout}")
+        logger.info(f"Script stderr: {result.stderr}")
+
+        #  ************************
         
         # Check if script executed successfully
         if result.returncode == 0:

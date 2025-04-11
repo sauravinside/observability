@@ -1,8 +1,22 @@
 #!/bin/bash
 
+clear
+
 set -e  # Exit on error
 
-clear
+# ********************
+
+# Add logging to script
+exec 1> >(logger -s -t $(basename $0)) 2>&1
+
+# Log script start
+echo "Starting monitoring setup script"
+echo "Current user: $(whoami)"
+echo "Current directory: $(pwd)"
+echo "Environment variables:"
+env
+
+# ********************
 
 source ./variables.sh
 
