@@ -235,12 +235,11 @@
             <!-- Namespace -->
             <div class="form-group">
                 <div class="info-icon"
-                    data-tooltip="If the provided namespace is not found in the cluster, it will be automatically created.">
+                    data-tooltip="If the provided namespace is not found in the cluster, it will be automatically created. If left empty, 'default' namespace will be used.">
                     <label for="NAMESPACE">Namespace</label>
                     <span class="icon">i</span>
                 </div>
-                <input type="text" class="form-control" id="NAMESPACE" name="NAMESPACE"
-                    placeholder="Enter namespace name" required>
+                <input type="text" id="NAMESPACE" name="NAMESPACE" placeholder="Leave empty for 'default'">
             </div>
 
             <!-- Cluster Name -->
@@ -322,7 +321,8 @@
                     <label for="PROMETHEUS_VERSION">Prometheus Version</label>
                     <span class="icon">i</span>
                 </div>
-                <input type="text" id="PROMETHEUS_VERSION" name="PROMETHEUS_VERSION" placeholder="Enter prometheus version">
+                <input type="text" id="PROMETHEUS_VERSION" name="PROMETHEUS_VERSION"
+                    placeholder="Enter prometheus version">
                 <!-- <select class="form-control" id="PROMETHEUS_VERSION" name="PROMETHEUS_VERSION" required>
                     <option value="">Select Prometheus Version</option>
                     {% for version in prometheus_versions %}

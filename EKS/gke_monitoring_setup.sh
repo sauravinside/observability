@@ -28,13 +28,17 @@ configure_GKE_auth (){
 }
 
 create_namespace() {
+    # Use "default" if NAMESPACE is not set
+    NAMESPACE=${NAMESPACE:-default}
+
     if kubectl get namespace "$NAMESPACE" > /dev/null 2>&1; then
-        echo "Namespace '$NAMESPACE' already exists."
+        echo "Namespace '$NAMESPACE' already exists or is default."
     else
         kubectl create namespace "$NAMESPACE"
         echo "Namespace '$NAMESPACE' created."
     fi
-    kubectl config set-context --current --namespace=$NAMESPACE
+
+    kubectl config set-context --current --namespace="$NAMESPACE"
 }
 
 command_exists() {
