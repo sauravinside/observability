@@ -536,8 +536,89 @@ def create_playbook():
             'when': f"{register_var}_check.stdout == 'not-installed'"
         })
     
-    # Add task to copy prometheus config - always update this
+    # Add these specific tasks for Prometheus+Grafana if it's selected
     if 'prometheus+grafana' in monitoring_tools:
+        # Create dashboards directory
+        playbook[0]['tasks'].append({
+            'name': 'Create dashboard directory',
+            'file': {
+                'path': '/var/lib/grafana/dashboards',
+                'state': 'directory',
+                'owner': 'grafana',
+                'group': 'grafana',
+                'mode': '0755'
+            }
+        })
+        
+        # Create provisioning configuration
+        playbook[0]['tasks'].append({
+            'name': 'Create Grafana dashboard provisioning config',
+            'copy': {
+                'content': '''# config file version
+apiVersion: 1
+
+providers:
+  - name: 'default'
+    orgId: 1
+    folder: 'Monitoring'
+    folderUid: ''
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+''',
+                'dest': '/etc/grafana/provisioning/dashboards/default.yaml',
+                'owner': 'grafana',
+                'group': 'grafana',
+                'mode': '0644'
+            }
+        })
+        
+        # Download Node Exporter dashboard
+        playbook[0]['tasks'].append({
+            'name': 'Download Node Exporter Full dashboard',
+            'get_url': {
+                'url': 'https://grafana.com/api/dashboards/1860/revisions/latest/download',
+                'dest': '/var/lib/grafana/dashboards/node-exporter-full.json',
+                'mode': '0644'
+            }
+        })
+        
+        # Download Process Exporter dashboard
+        playbook[0]['tasks'].append({
+            'name': 'Download Process Exporter dashboard',
+            'get_url': {
+                'url': 'https://grafana.com/api/dashboards/22161/revisions/latest/download',
+                'dest': '/var/lib/grafana/dashboards/process-exporter.json',
+                'mode': '0644'
+            }
+        })
+        
+        # Fix datasource references
+        playbook[0]['tasks'].append({
+            'name': 'Fix dashboard datasource references',
+            'replace': {
+                'path': '/var/lib/grafana/dashboards/{{ item }}',
+                'regexp': '\${DS_PROMETHEUS}',
+                'replace': 'Prometheus'
+            },
+            'with_items': ['node-exporter-full.json', 'process-exporter.json']
+        })
+        
+        # Set ownership
+        playbook[0]['tasks'].append({
+            'name': 'Set dashboard permissions',
+            'file': {
+                'path': '/var/lib/grafana/dashboards',
+                'owner': 'grafana',
+                'group': 'grafana',
+                'recurse': 'yes'
+            }
+        })
+        
+        # Add task to copy prometheus config
         playbook[0]['tasks'].append({
             'name': 'Copy Prometheus Config',
             'copy': {
@@ -545,7 +626,7 @@ def create_playbook():
                 'dest': '/etc/prometheus/prometheus.yml'
             }
         })
-        
+            
         # Add task to restart prometheus
         playbook[0]['tasks'].append({
             'name': 'Restart Prometheus',
@@ -554,12 +635,20 @@ def create_playbook():
                 'state': 'restarted'
             }
         })
-    
+        
+        # Restart Grafana to apply the changes
+        playbook[0]['tasks'].append({
+            'name': 'Restart Grafana',
+            'service': {
+                'name': 'grafana-server',
+                'state': 'restarted'
+            }
+        })
     # Write playbook to file
     playbook_path = '/opt/observability/ansible/playbook.yaml'
     with open(playbook_path, 'w') as f:
         yaml.dump(playbook, f)
-
+        
 def tool_to_service(tool):
     """Convert tool name to systemd service name."""
     service_map = {
