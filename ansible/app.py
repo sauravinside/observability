@@ -127,7 +127,34 @@ def select_monitored_tools_submit():
     monitored_tools = request.form.getlist('monitored_tools')
     session['monitored_tools'] = monitored_tools
     
-    return redirect(url_for('enter_role_arn'))
+    # Check if CloudWatch Exporter was selected in monitoring tools (case-insensitive check)
+    if any(tool.lower() == 'cloudwatch exporter' for tool in session.get('monitoring_tools', [])):
+        # Go to role ARN page
+        return redirect(url_for('enter_role_arn'))
+    else:
+        # Skip role ARN page
+        return redirect(url_for('deploy_without_role'))
+
+# Add a new route for deployment without role ARN
+@app.route('/deploy_without_role')
+def deploy_without_role():
+    # Set an empty role ARN
+    session['role_arn'] = ''
+    
+    # Create the ansible inventory file
+    create_inventory()
+    
+    # Create the prometheus config file
+    create_prometheus_config()
+    
+    # Create the ansible playbook
+    create_playbook()
+    
+    # Execute the playbook
+    result = execute_playbook()
+    
+    # Render the template with the complete result
+    return render_template('deployment_result.html', result=result)
 
 @app.route('/enter_role_arn')
 def enter_role_arn():
@@ -319,8 +346,9 @@ def create_inventory():
 def execute_playbook():
     role_arn = session.get('role_arn', '')
     
-    # Set environment variable for AWS role
-    os.environ['AWS_ROLE_ARN'] = role_arn
+    # Set environment variable for AWS role only if it's provided
+    if role_arn:
+        os.environ['AWS_ROLE_ARN'] = role_arn
     
     # Make sure inventory and playbook files exist
     inventory_path = '/opt/observability/ansible/inventory.yaml'
@@ -468,24 +496,47 @@ def create_playbook():
         script_name = tool_to_script(tool)
         # Replace + with _ in register variable names
         register_var = tool.replace('+', '_').replace(' ', '_') + '_result'
+        
+        # Add a check if the tool is already installed
+        playbook[0]['tasks'].append({
+            'name': f'Check if {tool} is already installed',
+            'shell': f"systemctl is-active --quiet {tool_to_service(tool)} || echo 'not-installed'",
+            'register': f"{register_var}_check",
+            'failed_when': False,
+            'changed_when': False
+        })
+        
+        # Only install if not already installed
         playbook[0]['tasks'].append({
             'name': f'Install {tool}',
             'script': f'/opt/observability/ansible/scripts/{script_name}',
-            'register': register_var
+            'register': register_var,
+            'when': f"{register_var}_check.stdout == 'not-installed'"
         })
     
-    # Add tasks for monitored tools
+    # Add tasks for monitored tools (similar approach)
     for tool in monitored_tools:
         script_name = tool_to_script(tool)
-        # Replace + with _ in register variable names
         register_var = tool.replace('+', '_').replace(' ', '_') + '_result'
+        
+        # Add a check if the tool is already installed
+        playbook[1]['tasks'].append({
+            'name': f'Check if {tool} is already installed',
+            'shell': f"systemctl is-active --quiet {tool_to_service(tool)} || echo 'not-installed'",
+            'register': f"{register_var}_check",
+            'failed_when': False,
+            'changed_when': False
+        })
+        
+        # Only install if not already installed
         playbook[1]['tasks'].append({
             'name': f'Install {tool}',
             'script': f'/opt/observability/ansible/scripts/{script_name}',
-            'register': register_var
+            'register': register_var,
+            'when': f"{register_var}_check.stdout == 'not-installed'"
         })
     
-    # Add task to copy prometheus config
+    # Add task to copy prometheus config - always update this
     if 'prometheus+grafana' in monitoring_tools:
         playbook[0]['tasks'].append({
             'name': 'Copy Prometheus Config',
@@ -509,6 +560,19 @@ def create_playbook():
     with open(playbook_path, 'w') as f:
         yaml.dump(playbook, f)
 
+def tool_to_service(tool):
+    """Convert tool name to systemd service name."""
+    service_map = {
+        'prometheus+grafana': 'prometheus',  # We'll check just prometheus as the main service
+        'node exporter': 'node_exporter',
+        'process exporter': 'process-exporter',
+        'blackbox exporter': 'blackbox_exporter',
+        'cloudwatch exporter': 'cloudwatch_exporter',
+        'alertmanager': 'alertmanager'
+    }
+    
+    return service_map.get(tool, tool.replace(' ', '_').replace('+', '_'))
+
 def tool_to_script(tool):
     script_map = {
         'prometheus+grafana': 'install_prometheus_grafana.sh',
@@ -521,5 +585,26 @@ def tool_to_script(tool):
     
     return script_map.get(tool, '')
         
+def is_tool_installed(tool_name, host_type='monitoring'):
+    """Check if a tool is already installed on the specified host type."""
+    
+    # Map tools to their service names or check commands
+    tool_check_map = {
+        'prometheus+grafana': 'systemctl is-active --quiet prometheus && systemctl is-active --quiet grafana-server',
+        'node exporter': 'systemctl is-active --quiet node_exporter',
+        'process exporter': 'systemctl is-active --quiet process-exporter',
+        'blackbox exporter': 'systemctl is-active --quiet blackbox_exporter',
+        'cloudwatch exporter': 'systemctl is-active --quiet cloudwatch_exporter',
+        'alertmanager': 'systemctl is-active --quiet alertmanager'
+    }
+    
+    # If we don't have a check for this tool, assume it's not installed
+    if tool_name not in tool_check_map:
+        return False
+    
+    check_command = tool_check_map[tool_name]
+    
+    # Add the check to the playbook content
+    return f"{{ ansible_check_mode: true }} {check_command}"
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=4000, debug=True)
