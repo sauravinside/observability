@@ -224,11 +224,11 @@
 
             <!-- Namespace Field -->
             <div class="info-icon"
-                data-tooltip="If the provided namespace is not found in the cluster, it will be automatically created.">
+                data-tooltip="If the provided namespace is not found in the cluster, it will be automatically created. If left empty, 'default' namespace will be used.">
                 <label for="NAMESPACE">Namespace</label>
                 <span class="icon">i</span>
             </div>
-            <input type="text" id="NAMESPACE" name="NAMESPACE" placeholder="Enter namespace">
+            <input type="text" id="NAMESPACE" name="NAMESPACE" placeholder="Leave empty for 'default'">
 
             <!-- Cluster Name Field -->
             <div class="info-icon"
@@ -245,7 +245,7 @@
             </div>
             <select class="form-control" id="REGION" name="REGION" required>
                 <option value="">Select a region</option>
-                
+
                 <optgroup label="North America">
                     <option value="us-east-1">US East (N. Virginia) - us-east-1</option>
                     <option value="us-east-2">US East (Ohio) - us-east-2</option>
@@ -253,11 +253,11 @@
                     <option value="us-west-2">US West (Oregon) - us-west-2</option>
                     <option value="ca-central-1">Canada (Central) - ca-central-1</option>
                 </optgroup>
-            
+
                 <optgroup label="South America">
                     <option value="sa-east-1">South America (São Paulo) - sa-east-1</option>
                 </optgroup>
-            
+
                 <optgroup label="Europe">
                     <option value="eu-west-1">Europe (Ireland) - eu-west-1</option>
                     <option value="eu-west-2">Europe (London) - eu-west-2</option>
@@ -266,7 +266,7 @@
                     <option value="eu-north-1">Europe (Stockholm) - eu-north-1</option>
                     <option value="eu-south-1">Europe (Milan) - eu-south-1</option>
                 </optgroup>
-            
+
                 <optgroup label="Asia Pacific">
                     <option value="ap-east-1">Asia Pacific (Hong Kong) - ap-east-1</option>
                     <option value="ap-south-1">Asia Pacific (Mumbai) - ap-south-1</option>
@@ -277,11 +277,11 @@
                     <option value="ap-southeast-2">Asia Pacific (Sydney) - ap-southeast-2</option>
                     <option value="ap-southeast-3">Asia Pacific (Jakarta) - ap-southeast-3</option>
                 </optgroup>
-            
+
                 <optgroup label="Middle East">
                     <option value="me-south-1">Middle East (Bahrain) - me-south-1</option>
                 </optgroup>
-            
+
                 <optgroup label="Africa">
                     <option value="af-south-1">Africa (Cape Town) - af-south-1</option>
                 </optgroup>
@@ -470,7 +470,8 @@
 
             <!-- S3 Storage -->
             <div id="s3Storage" class="hidden">
-                <div class="info-icon" data-tooltip="The S3 bucket must be pre-created in AWS, and the provided name should match the existing bucket.">
+                <div class="info-icon"
+                    data-tooltip="The S3 bucket must be pre-created in AWS, and the provided name should match the existing bucket.">
                     <label for="S3_BUCKET_NAME">S3 Bucket Name</label>
                     <span class="icon">i</span>
                 </div>

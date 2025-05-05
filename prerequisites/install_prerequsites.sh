@@ -109,9 +109,24 @@ After=network.target
 
 [Service]
 User=root
+Group=root
 WorkingDirectory=/opt/observability/EKS
-ExecStart=/usr/bin/python3 /opt/observability/EKS/app.py
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=/opt/observability/EKS"
+Environment="FLASK_APP=/opt/observability/EKS/app.py"
+Environment="FLASK_ENV=production"
+Environment="PYTHONUNBUFFERED=1"
+
+# Change the ExecStart to capture more detailed errors
+ExecStart=/usr/bin/python3 -u /opt/observability/EKS/app.py
+
+# Restart configuration
 Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=append:/var/log/eksmonitoring.log
+StandardError=append:/var/log/eksmonitoring.error.log
 
 [Install]
 WantedBy=multi-user.target
