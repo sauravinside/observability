@@ -10,6 +10,7 @@ import time
 from botocore.exceptions import ClientError
 from flask_cors import CORS
 from typing import Dict, List, Union
+from flask import send_from_directory
 import logging
 
 # Configure logging
@@ -246,62 +247,62 @@ def _create_and_attach_role(iam, ec2, instance_id: str, role_name: str, required
             InstanceId=instance_id
         )
 
-def setup_nginx() -> None:
-    try:
-        os.makedirs('/var/www/html/css', exist_ok=True)
-        os.makedirs('/var/www/html/js', exist_ok=True)
+# def setup_nginx() -> None:
+#     try:
+#         os.makedirs('/var/www/html/css', exist_ok=True)
+#         os.makedirs('/var/www/html/js', exist_ok=True)
         
-        # Copy HTML, CSS, and JS files
-        shutil.copy(os.path.join(FRONTEND_DIR, 'index.html'), '/var/www/html/')
-        shutil.copy(os.path.join(FRONTEND_DIR, 'css/styles.css'), '/var/www/html/css/')
-        shutil.copy(os.path.join(FRONTEND_DIR, 'js/script.js'), '/var/www/html/js/')
-        # Copy the images folder (ensure your images folder is in the frontend folder)
-        shutil.copytree(os.path.join(FRONTEND_DIR, 'images'), '/var/www/html/images', dirs_exist_ok=True)
+#         # Copy HTML, CSS, and JS files
+#         shutil.copy(os.path.join(FRONTEND_DIR, 'index.html'), '/var/www/html/')
+#         shutil.copy(os.path.join(FRONTEND_DIR, 'css/styles.css'), '/var/www/html/css/')
+#         shutil.copy(os.path.join(FRONTEND_DIR, 'js/script.js'), '/var/www/html/js/')
+#         # Copy the images folder (ensure your images folder is in the frontend folder)
+#         shutil.copytree(os.path.join(FRONTEND_DIR, 'images'), '/var/www/html/images', dirs_exist_ok=True)
 
-        nginx_config = """
-        server {
-        listen 80;
-        server_name _;
+#         nginx_config = """
+#         server {
+#         listen 80;
+#         server_name _;
 
-        # Serve static files under /cloudwatch
-        location /cloudwatch/ {
-            alias /var/www/html/;
-            try_files $uri $uri/ /cloudwatch/index.html;
-        }
+#         # Serve static files under /cloudwatch
+#         location /cloudwatch/ {
+#             alias /var/www/html/;
+#             try_files $uri $uri/ /cloudwatch/index.html;
+#         }
 
-        # Proxy API calls under /cloudwatch/api
-        location /cloudwatch/api/ {
-            proxy_pass http://localhost:5000/api/;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_connect_timeout 600;
-            proxy_send_timeout 600;
-            proxy_read_timeout 600;
-            send_timeout 600;
-        }
+#         # Proxy API calls under /cloudwatch/api
+#         location /cloudwatch/api/ {
+#             proxy_pass http://localhost:5000/api/;
+#             proxy_set_header Host $host;
+#             proxy_set_header X-Real-IP $remote_addr;
+#             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#             proxy_set_header X-Forwarded-Proto $scheme;
+#             proxy_connect_timeout 600;
+#             proxy_send_timeout 600;
+#             proxy_read_timeout 600;
+#             send_timeout 600;
+#         }
 
-        # Optionally, block or redirect other requests
-        location / {
-            return 404;
-        }
-    }
-        """
+#         # Optionally, block or redirect other requests
+#         location / {
+#             return 404;
+#         }
+#     }
+#         """
         
-        temp_path = '/tmp/nginx_default'
-        with open(temp_path, 'w') as f:
-            f.write(nginx_config.strip())
+#         temp_path = '/tmp/nginx_default'
+#         with open(temp_path, 'w') as f:
+#             f.write(nginx_config.strip())
         
-        subprocess.run(['sudo', 'mv', temp_path, '/etc/nginx/sites-available/default'], check=True)
-        subprocess.run(['sudo', 'nginx', '-t'], check=True)
-        subprocess.run(['sudo', 'chown', '-R', 'www-data:www-data', '/var/www/html'])
-        subprocess.run(['sudo', 'chmod', '-R', '755', '/var/www/html'])
-        subprocess.run(['sudo', 'systemctl', 'restart', 'nginx'], check=True)
-        logger.info("Nginx setup completed successfully")
-    except Exception as e:
-        logger.error(f"Error setting up nginx: {str(e)}")
-        raise
+#         subprocess.run(['sudo', 'mv', temp_path, '/etc/nginx/sites-available/default'], check=True)
+#         subprocess.run(['sudo', 'nginx', '-t'], check=True)
+#         subprocess.run(['sudo', 'chown', '-R', 'www-data:www-data', '/var/www/html'])
+#         subprocess.run(['sudo', 'chmod', '-R', '755', '/var/www/html'])
+#         subprocess.run(['sudo', 'systemctl', 'restart', 'nginx'], check=True)
+#         logger.info("Nginx setup completed successfully")
+#     except Exception as e:
+#         logger.error(f"Error setting up nginx: {str(e)}")
+#         raise
     
 def create_aws_client(service: str, region: str = None) -> boto3.client:
     try:
@@ -311,6 +312,21 @@ def create_aws_client(service: str, region: str = None) -> boto3.client:
     except Exception as e:
         logger.error(f"Error creating AWS {service} client: {str(e)}")
         raise
+
+# Define the path to the frontend directory
+FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'frontend')
+
+# Serve the frontend files
+@app.route('/')
+def index():
+    return send_from_directory(FRONTEND_DIR, 'index.html')
+
+@app.route('/<path:path>')
+def static_files(path):
+    if os.path.exists(os.path.join(FRONTEND_DIR, path)):
+        return send_from_directory(FRONTEND_DIR, path)
+    else:
+        return "Not Found", 404
 
 @app.route('/api/services')
 def get_services() -> Dict:
@@ -700,7 +716,7 @@ if __name__ == '__main__':
         sts = create_aws_client('sts')
         sts.get_caller_identity()
         logger.info("AWS credentials verified successfully")
-        setup_nginx()
+        # setup_nginx()
         app.run(host='0.0.0.0', port=5000, debug=False)
     except Exception as e:
         logger.error(f"Startup error: {str(e)}")

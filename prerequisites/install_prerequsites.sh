@@ -172,5 +172,37 @@ sudo systemctl daemon-reload
 sudo systemctl enable observability.service
 sudo systemctl start observability.service
 
+# Configure Nginx to serve the Main Observability Portal on port 80
+sudo tee /etc/nginx/sites-available/observability > /dev/null << 'EOF'
+server {
+    listen 80;
+    server_name _;
+
+    location / {
+        proxy_pass http://localhost:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+EOF
+
+# Create symbolic link to enable the site
+sudo ln -s /etc/nginx/sites-available/observability /etc/nginx/sites-enabled/
+
+# Remove default site if it exists
+sudo rm -f /etc/nginx/sites-enabled/default
+
+# Test Nginx configuration
+sudo nginx -t
+
+# Restart Nginx to apply changes
+sudo systemctl restart nginx
+
 # Check service status
 sudo systemctl status observability.service

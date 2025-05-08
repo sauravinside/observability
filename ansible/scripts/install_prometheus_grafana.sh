@@ -98,12 +98,14 @@ EOF
 sudo chown grafana:grafana /etc/grafana/provisioning/datasources/prometheus-datasource.yaml
 
 # Step 3.5
-# Set up Grafana dashboards
+# Set up Grafana dashboards(This step actually decides which dashboards to automatically Setup)
 sudo mkdir -p /var/lib/grafana/dashboards
 # Download Node Exporter Full dashboard
 sudo wget -O /var/lib/grafana/dashboards/node-exporter-full.json https://grafana.com/api/dashboards/1860/revisions/latest/download
 # Download Process Exporter dashboard
 sudo wget -O /var/lib/grafana/dashboards/process-exporter.json https://grafana.com/api/dashboards/22161/revisions/latest/download
+# Download Blackbox Exporter dashboard
+sudo wget -O /var/lib/grafana/dashboards/blackbox-exporter.json https://grafana.com/api/dashboards/7587/revisions/latest/download
 # The downloaded dashboards will reference ${DS_PROMETHEUS} - need to replace with "Prometheus"
 sudo sed -i 's/${DS_PROMETHEUS}/Prometheus/g' /var/lib/grafana/dashboards/*.json
 # Set proper permissions

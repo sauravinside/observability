@@ -120,6 +120,11 @@ def select_monitoring_tools_submit():
     monitoring_tools = request.form.getlist('monitoring_tools')
     session['monitoring_tools'] = monitoring_tools
     
+    # Store the website to monitor if Blackbox Exporter is selected
+    if 'blackbox exporter' in monitoring_tools:
+        website_to_monitor = request.form.get('website_to_monitor', '')
+        session['website_to_monitor'] = website_to_monitor
+    
     return redirect(url_for('select_monitored_tools'))
 
 @app.route('/select_monitored_tools_submit', methods=['POST'])
@@ -444,6 +449,9 @@ def create_prometheus_config():
     monitoring_server = session.get('monitoring_server')
     monitored_servers = session.get('monitored_servers', [])
     
+    # Get the website to monitor if blackbox exporter was selected
+    website_to_monitor = session.get('website_to_monitor', '')
+    
     # Create a Jinja2 environment and template
     env = jinja2.Environment()
     template = env.from_string(template_content)
@@ -453,7 +461,8 @@ def create_prometheus_config():
         'groups': {
             'clients': [f'client_{i}' for i in range(len(monitored_servers))]
         },
-        'hostvars': {}
+        'hostvars': {},
+        'website_to_monitor': website_to_monitor  # Add the website to the context
     }
     
     # Add the host variables using private IPs
@@ -470,7 +479,7 @@ def create_prometheus_config():
     config_path = '/opt/observability/ansible/prometheus.yml'
     with open(config_path, 'w') as f:
         f.write(rendered_config)
-
+        
 def create_playbook():
     monitoring_tools = session.get('monitoring_tools', [])
     monitored_tools = session.get('monitored_tools', [])
