@@ -6,6 +6,18 @@
     <title>Select Monitoring Tools | AWS Automation Portal</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <script>
+        function toggleWebsiteInput() {
+            const blackboxChecked = document.querySelector('input[value="blackbox exporter"]').checked;
+            const websiteInputDiv = document.getElementById('website-input-div');
+            
+            if (blackboxChecked) {
+                websiteInputDiv.classList.remove('hidden');
+            } else {
+                websiteInputDiv.classList.add('hidden');
+            }
+        }
+    </script>
 </head>
 <body class="bg-gray-100 font-sans">
     <div class="min-h-screen flex flex-col">
@@ -48,11 +60,25 @@
                         </div>
                         
                         <div class="flex items-start space-x-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
-                            <input type="checkbox" name="monitoring_tools" value="blackbox exporter" class="mt-1 h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                            <input type="checkbox" name="monitoring_tools" value="blackbox exporter" 
+                                   class="mt-1 h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                   onchange="toggleWebsiteInput()">
                             <div>
                                 <label class="text-lg font-medium text-gray-900">Blackbox Exporter</label>
                                 <p class="text-gray-600">Probes endpoints over HTTP, HTTPS, DNS, TCP, and ICMP.</p>
                             </div>
+                        </div>
+                        
+                        <!-- Website input field - hidden by default -->
+                        <div id="website-input-div" class="hidden ml-12 mt-2 p-4 bg-blue-50 rounded-lg">
+                            <label class="block text-gray-700 font-semibold mb-2">Website to Monitor:</label>
+                            <input 
+                                type="text" 
+                                name="website_to_monitor" 
+                                placeholder="https://example.com"
+                                class="block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                            >
+                            <p class="mt-2 text-sm text-gray-500">Enter the full URL including https:// for the website you want to monitor</p>
                         </div>
                         
                         <div class="flex items-start space-x-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50">

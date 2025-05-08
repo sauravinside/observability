@@ -76,7 +76,7 @@ echo "deb [signed-by=/usr/share/keyrings/grafana.key] https://apt.grafana.com st
 sudo apt-get update
 sudo apt-get install -y grafana
 
-# Step 3.5: Create provisioning directory if it doesn't exist
+# Step 3.25: Create provisioning directory if it doesn't exist
 echo "Setting up Grafana provisioning directory..."
 sudo mkdir -p /etc/grafana/provisioning/datasources
 sudo chown -R grafana:grafana /etc/grafana/provisioning
@@ -96,6 +96,39 @@ EOF
 
 # Ensure proper permissions
 sudo chown grafana:grafana /etc/grafana/provisioning/datasources/prometheus-datasource.yaml
+
+# Step 3.5
+# Set up Grafana dashboards(This step actually decides which dashboards to automatically Setup)
+sudo mkdir -p /var/lib/grafana/dashboards
+# Download Node Exporter Full dashboard
+sudo wget -O /var/lib/grafana/dashboards/node-exporter-full.json https://grafana.com/api/dashboards/1860/revisions/latest/download
+# Download Process Exporter dashboard
+sudo wget -O /var/lib/grafana/dashboards/process-exporter.json https://grafana.com/api/dashboards/22161/revisions/latest/download
+# Download Blackbox Exporter dashboard
+sudo wget -O /var/lib/grafana/dashboards/blackbox-exporter.json https://grafana.com/api/dashboards/7587/revisions/latest/download
+# The downloaded dashboards will reference ${DS_PROMETHEUS} - need to replace with "Prometheus"
+sudo sed -i 's/${DS_PROMETHEUS}/Prometheus/g' /var/lib/grafana/dashboards/*.json
+# Set proper permissions
+sudo chown -R grafana:grafana /var/lib/grafana/dashboards
+
+# Step 3.75
+#Create default.yaml in dashboard directory
+cat <<EOF | sudo tee /etc/grafana/provisioning/dashboards/default.yaml > /dev/null
+# config file version
+apiVersion: 1
+
+providers:
+  - name: 'default'
+    orgId: 1
+    folder: 'Monitoring'
+    folderUid: ''
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+EOF
 
 # Step 4: Start and enable Grafana service
 sudo systemctl daemon-reload

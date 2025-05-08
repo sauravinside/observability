@@ -120,6 +120,11 @@ def select_monitoring_tools_submit():
     monitoring_tools = request.form.getlist('monitoring_tools')
     session['monitoring_tools'] = monitoring_tools
     
+    # Store the website to monitor if Blackbox Exporter is selected
+    if 'blackbox exporter' in monitoring_tools:
+        website_to_monitor = request.form.get('website_to_monitor', '')
+        session['website_to_monitor'] = website_to_monitor
+    
     return redirect(url_for('select_monitored_tools'))
 
 @app.route('/select_monitored_tools_submit', methods=['POST'])
@@ -127,7 +132,34 @@ def select_monitored_tools_submit():
     monitored_tools = request.form.getlist('monitored_tools')
     session['monitored_tools'] = monitored_tools
     
-    return redirect(url_for('enter_role_arn'))
+    # Check if CloudWatch Exporter was selected in monitoring tools (case-insensitive check)
+    if any(tool.lower() == 'cloudwatch exporter' for tool in session.get('monitoring_tools', [])):
+        # Go to role ARN page
+        return redirect(url_for('enter_role_arn'))
+    else:
+        # Skip role ARN page
+        return redirect(url_for('deploy_without_role'))
+
+# Add a new route for deployment without role ARN
+@app.route('/deploy_without_role')
+def deploy_without_role():
+    # Set an empty role ARN
+    session['role_arn'] = ''
+    
+    # Create the ansible inventory file
+    create_inventory()
+    
+    # Create the prometheus config file
+    create_prometheus_config()
+    
+    # Create the ansible playbook
+    create_playbook()
+    
+    # Execute the playbook
+    result = execute_playbook()
+    
+    # Render the template with the complete result
+    return render_template('deployment_result.html', result=result)
 
 @app.route('/enter_role_arn')
 def enter_role_arn():
@@ -319,8 +351,9 @@ def create_inventory():
 def execute_playbook():
     role_arn = session.get('role_arn', '')
     
-    # Set environment variable for AWS role
-    os.environ['AWS_ROLE_ARN'] = role_arn
+    # Set environment variable for AWS role only if it's provided
+    if role_arn:
+        os.environ['AWS_ROLE_ARN'] = role_arn
     
     # Make sure inventory and playbook files exist
     inventory_path = '/opt/observability/ansible/inventory.yaml'
@@ -416,6 +449,9 @@ def create_prometheus_config():
     monitoring_server = session.get('monitoring_server')
     monitored_servers = session.get('monitored_servers', [])
     
+    # Get the website to monitor if blackbox exporter was selected
+    website_to_monitor = session.get('website_to_monitor', '')
+    
     # Create a Jinja2 environment and template
     env = jinja2.Environment()
     template = env.from_string(template_content)
@@ -425,7 +461,8 @@ def create_prometheus_config():
         'groups': {
             'clients': [f'client_{i}' for i in range(len(monitored_servers))]
         },
-        'hostvars': {}
+        'hostvars': {},
+        'website_to_monitor': website_to_monitor  # Add the website to the context
     }
     
     # Add the host variables using private IPs
@@ -442,7 +479,7 @@ def create_prometheus_config():
     config_path = '/opt/observability/ansible/prometheus.yml'
     with open(config_path, 'w') as f:
         f.write(rendered_config)
-
+        
 def create_playbook():
     monitoring_tools = session.get('monitoring_tools', [])
     monitored_tools = session.get('monitored_tools', [])
@@ -468,25 +505,129 @@ def create_playbook():
         script_name = tool_to_script(tool)
         # Replace + with _ in register variable names
         register_var = tool.replace('+', '_').replace(' ', '_') + '_result'
+        
+        # Add a check if the tool is already installed
+        playbook[0]['tasks'].append({
+            'name': f'Check if {tool} is already installed',
+            'shell': f"systemctl is-active --quiet {tool_to_service(tool)} || echo 'not-installed'",
+            'register': f"{register_var}_check",
+            'failed_when': False,
+            'changed_when': False
+        })
+        
+        # Only install if not already installed
         playbook[0]['tasks'].append({
             'name': f'Install {tool}',
             'script': f'/opt/observability/ansible/scripts/{script_name}',
-            'register': register_var
+            'register': register_var,
+            'when': f"{register_var}_check.stdout == 'not-installed'"
         })
     
-    # Add tasks for monitored tools
+    # Add tasks for monitored tools (similar approach)
     for tool in monitored_tools:
         script_name = tool_to_script(tool)
-        # Replace + with _ in register variable names
         register_var = tool.replace('+', '_').replace(' ', '_') + '_result'
+        
+        # Add a check if the tool is already installed
+        playbook[1]['tasks'].append({
+            'name': f'Check if {tool} is already installed',
+            'shell': f"systemctl is-active --quiet {tool_to_service(tool)} || echo 'not-installed'",
+            'register': f"{register_var}_check",
+            'failed_when': False,
+            'changed_when': False
+        })
+        
+        # Only install if not already installed
         playbook[1]['tasks'].append({
             'name': f'Install {tool}',
             'script': f'/opt/observability/ansible/scripts/{script_name}',
-            'register': register_var
+            'register': register_var,
+            'when': f"{register_var}_check.stdout == 'not-installed'"
         })
     
-    # Add task to copy prometheus config
+    # Add these specific tasks for Prometheus+Grafana if it's selected
     if 'prometheus+grafana' in monitoring_tools:
+        # Create dashboards directory
+        playbook[0]['tasks'].append({
+            'name': 'Create dashboard directory',
+            'file': {
+                'path': '/var/lib/grafana/dashboards',
+                'state': 'directory',
+                'owner': 'grafana',
+                'group': 'grafana',
+                'mode': '0755'
+            }
+        })
+        
+        # Create provisioning configuration
+        playbook[0]['tasks'].append({
+            'name': 'Create Grafana dashboard provisioning config',
+            'copy': {
+                'content': '''# config file version
+apiVersion: 1
+
+providers:
+  - name: 'default'
+    orgId: 1
+    folder: 'Monitoring'
+    folderUid: ''
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+''',
+                'dest': '/etc/grafana/provisioning/dashboards/default.yaml',
+                'owner': 'grafana',
+                'group': 'grafana',
+                'mode': '0644'
+            }
+        })
+        
+        # Download Node Exporter dashboard
+        playbook[0]['tasks'].append({
+            'name': 'Download Node Exporter Full dashboard',
+            'get_url': {
+                'url': 'https://grafana.com/api/dashboards/1860/revisions/latest/download',
+                'dest': '/var/lib/grafana/dashboards/node-exporter-full.json',
+                'mode': '0644'
+            }
+        })
+        
+        # Download Process Exporter dashboard
+        playbook[0]['tasks'].append({
+            'name': 'Download Process Exporter dashboard',
+            'get_url': {
+                'url': 'https://grafana.com/api/dashboards/22161/revisions/latest/download',
+                'dest': '/var/lib/grafana/dashboards/process-exporter.json',
+                'mode': '0644'
+            }
+        })
+        
+        # Fix datasource references
+        playbook[0]['tasks'].append({
+            'name': 'Fix dashboard datasource references',
+            'replace': {
+                'path': '/var/lib/grafana/dashboards/{{ item }}',
+                'regexp': '\${DS_PROMETHEUS}',
+                'replace': 'Prometheus'
+            },
+            'with_items': ['node-exporter-full.json', 'process-exporter.json']
+        })
+        
+        # Set ownership
+        playbook[0]['tasks'].append({
+            'name': 'Set dashboard permissions',
+            'file': {
+                'path': '/var/lib/grafana/dashboards',
+                'owner': 'grafana',
+                'group': 'grafana',
+                'recurse': 'yes'
+            }
+        })
+        
+        # Add task to copy prometheus config
         playbook[0]['tasks'].append({
             'name': 'Copy Prometheus Config',
             'copy': {
@@ -494,7 +635,7 @@ def create_playbook():
                 'dest': '/etc/prometheus/prometheus.yml'
             }
         })
-        
+            
         # Add task to restart prometheus
         playbook[0]['tasks'].append({
             'name': 'Restart Prometheus',
@@ -503,11 +644,32 @@ def create_playbook():
                 'state': 'restarted'
             }
         })
-    
+        
+        # Restart Grafana to apply the changes
+        playbook[0]['tasks'].append({
+            'name': 'Restart Grafana',
+            'service': {
+                'name': 'grafana-server',
+                'state': 'restarted'
+            }
+        })
     # Write playbook to file
     playbook_path = '/opt/observability/ansible/playbook.yaml'
     with open(playbook_path, 'w') as f:
         yaml.dump(playbook, f)
+        
+def tool_to_service(tool):
+    """Convert tool name to systemd service name."""
+    service_map = {
+        'prometheus+grafana': 'prometheus',  # We'll check just prometheus as the main service
+        'node exporter': 'node_exporter',
+        'process exporter': 'process-exporter',
+        'blackbox exporter': 'blackbox_exporter',
+        'cloudwatch exporter': 'cloudwatch_exporter',
+        'alertmanager': 'alertmanager'
+    }
+    
+    return service_map.get(tool, tool.replace(' ', '_').replace('+', '_'))
 
 def tool_to_script(tool):
     script_map = {
@@ -521,5 +683,26 @@ def tool_to_script(tool):
     
     return script_map.get(tool, '')
         
+def is_tool_installed(tool_name, host_type='monitoring'):
+    """Check if a tool is already installed on the specified host type."""
+    
+    # Map tools to their service names or check commands
+    tool_check_map = {
+        'prometheus+grafana': 'systemctl is-active --quiet prometheus && systemctl is-active --quiet grafana-server',
+        'node exporter': 'systemctl is-active --quiet node_exporter',
+        'process exporter': 'systemctl is-active --quiet process-exporter',
+        'blackbox exporter': 'systemctl is-active --quiet blackbox_exporter',
+        'cloudwatch exporter': 'systemctl is-active --quiet cloudwatch_exporter',
+        'alertmanager': 'systemctl is-active --quiet alertmanager'
+    }
+    
+    # If we don't have a check for this tool, assume it's not installed
+    if tool_name not in tool_check_map:
+        return False
+    
+    check_command = tool_check_map[tool_name]
+    
+    # Add the check to the playbook content
+    return f"{{ ansible_check_mode: true }} {check_command}"
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=4000, debug=True)

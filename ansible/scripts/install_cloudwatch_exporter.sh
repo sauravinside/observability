@@ -18,6 +18,18 @@ sudo apt install -y default-jre
 mkdir -p $INSTALL_DIR
 wget $CLOUDWATCH_URL -O $INSTALL_DIR/$CLOUDWATCH_JAR
 
+# Step 2.5: Making config.yml file for cloudwatch exporter
+sudo cat <<EOF > /home/ubuntu/cloudwatch_exporter/config.yml
+region: ap-south-1
+metrics:
+  - aws_dimensions:
+    - DBInstanceIdentifier
+    aws_metric_name: FreeStorageSpace
+    aws_namespace: AWS/RDS
+    aws_statistics:
+    - Average
+EOF
+
 # Step 3: Create systemd service file
 sudo tee /etc/systemd/system/cloudwatch_exporter.service > /dev/null << EOF
 [Unit]
