@@ -511,7 +511,7 @@ def configure_monitoring():
             return jsonify({'error': 'No data provided'}), 400
 
         # Verify required fields
-        required_fields = ['region', 'service', 'resources', 'metrics', 'alerts', 'thresholds']
+        required_fields = ['region', 'service', 'resources', 'metrics']
         for field in required_fields:
             if field not in data:
                 return jsonify({'error': f'Missing required field: {field}'}), 400
@@ -520,14 +520,14 @@ def configure_monitoring():
         service = data['service'].upper()
         resources = data['resources']
         metrics = data['metrics']
-        alerts = data['alerts']
-        thresholds = data['thresholds']
+        alerts = data.get('alerts', False)
+        thresholds = data.get('thresholds', {})
+        subscribers = data.get('subscribers', [])
 
         service_config = AWS_SERVICES.get(service)
         if not service_config:
             return jsonify({'error': 'Invalid service'}), 400
 
-        sns = create_aws_client('sns', region)
         cloudwatch = create_aws_client('cloudwatch', region)
 
         # Compute resource IDs and add fallback if empty
@@ -535,17 +535,38 @@ def configure_monitoring():
         if not resource_ids or all(not str(r).strip() for r in resource_ids):
             resource_ids = ['None']
         dashboard_name = f"{service}-Monitor_{'-'.join(resource_ids)}"
-        topic_name = f"{service}_Monitoring_Alerts_{'-'.join(resource_ids)}"
-
-        try:
-            topic_response = sns.create_topic(Name=topic_name)
-            topic_arn = topic_response['TopicArn']
-        except ClientError as e:
-            logger.error(f"Error creating SNS topic: {str(e)}")
-            return jsonify({'error': f'Failed to create SNS topic: {str(e)}'}), 500
-
+        
+        # Only create SNS topic if alerts are enabled
+        topic_arn = None
+        topic_name = None
         alarm_arns = []
+        
         if alerts:
+            sns = create_aws_client('sns', region)
+            topic_name = f"{service}_Monitoring_Alerts_{'-'.join(resource_ids)}"
+            
+            try:
+                # Create the SNS topic
+                topic_response = sns.create_topic(Name=topic_name)
+                topic_arn = topic_response['TopicArn']
+                
+                # Add subscribers to the SNS topic
+                for email in subscribers:
+                    try:
+                        sns.subscribe(
+                            TopicArn=topic_arn,
+                            Protocol='email',
+                            Endpoint=email
+                        )
+                        logger.info(f"Successfully added subscriber {email} to SNS topic {topic_name}")
+                    except ClientError as e:
+                        logger.error(f"Error subscribing {email} to SNS topic: {str(e)}")
+                        
+            except ClientError as e:
+                logger.error(f"Error creating SNS topic: {str(e)}")
+                return jsonify({'error': f'Failed to create SNS topic: {str(e)}'}), 500
+                
+            # Create alarms only if alerts are enabled
             for resource in resources:
                 resource_id = resource['Id'] if isinstance(resource, dict) else resource
                 for metric in metrics:
@@ -698,19 +719,28 @@ def configure_monitoring():
             logger.error(f"Error creating dashboard: {str(e)}")
             return jsonify({'error': f'Failed to create dashboard: {str(e)}'}), 500
 
-        return jsonify({
+        # Customize the response based on whether alerts are enabled
+        response_data = {
             'message': 'Monitoring configured successfully!',
-            'snsTopicArn': topic_arn,
-            'topicName': topic_name,
             'dashboardName': dashboard_name,
-            'dashboardUrl': f"https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#dashboards:name={dashboard_name}",
-            'alarms': alarm_arns
-        })
+            'dashboardUrl': f"https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#dashboards:name={dashboard_name}"
+        }
+        
+        # Include SNS topic information only if alerts are enabled
+        if alerts:
+            response_data.update({
+                'snsTopicArn': topic_arn,
+                'topicName': topic_name,
+                'subscribersCount': len(subscribers),
+                'alarms': alarm_arns
+            })
+            
+        return jsonify(response_data)
 
     except Exception as e:
         logger.error(f"Unexpected error in configure_monitoring: {str(e)}")
         return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
-
+        
 if __name__ == '__main__':
     try:
         sts = create_aws_client('sts')

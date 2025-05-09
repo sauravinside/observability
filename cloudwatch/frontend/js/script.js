@@ -1,11 +1,12 @@
 let currentStep = 1;
-const totalSteps = 4;
+const totalSteps = 5; // Updated to include the new step
 let selectedResources = [];
 let selectedMetrics = [];
 let availableMetrics = [];
 let selectedKeys = {};
 let allResources = []; // stores all fetched resources
 let selectedService = null;
+let subscriberEmails = []; // New array to store subscriber emails
 
 const serviceLogos = {
     "EC2": "images/ec2.png",
@@ -35,6 +36,56 @@ function setupEventListeners() {
     document.getElementById('enableAlerts').addEventListener('change', handleAlertsToggle);
     document.querySelector('.close').addEventListener('click', closeModal);
     document.getElementById('regionFilter').addEventListener('change', filterAndDisplayResources);
+    
+    // Add event listener for the Add Email button
+    if (document.getElementById('addEmailBtn')) {
+        document.getElementById('addEmailBtn').addEventListener('click', addSubscriberEmail);
+    }
+}
+
+function addSubscriberEmail() {
+    const emailInput = document.getElementById('subscriberEmail');
+    const email = emailInput.value.trim();
+    
+    // Simple email validation
+    if (!email || !validateEmail(email)) {
+        showError('Please enter a valid email address.');
+        return;
+    }
+    
+    // Add email to array if not already present
+    if (!subscriberEmails.includes(email)) {
+        subscriberEmails.push(email);
+        
+        // Add email to the UI list
+        const subscribersList = document.getElementById('subscribersList');
+        const listItem = document.createElement('li');
+        listItem.className = 'subscriber-item';
+        listItem.innerHTML = `
+            <span>${email}</span>
+            <button class="remove-btn" data-email="${email}">✕</button>
+        `;
+        subscribersList.appendChild(listItem);
+        
+        // Add event listener to remove button
+        listItem.querySelector('.remove-btn').addEventListener('click', function() {
+            const emailToRemove = this.getAttribute('data-email');
+            subscriberEmails = subscriberEmails.filter(e => e !== emailToRemove);
+            listItem.remove();
+        });
+        
+        // Clear the input field
+        emailInput.value = '';
+    } else {
+        showError('This email address is already added.');
+    }
+    
+    updateNavigationButtons();
+}
+
+function validateEmail(email) {
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return re.test(email);
 }
 
 async function fetchServices() {
@@ -157,6 +208,20 @@ function nextStep() {
                     updateNavigationButtons();
                 })
                 .catch(error => showError(error.message));
+        } else if (currentStep === 4) {
+            // Check if alerts are enabled before moving to step 5
+            const alertsEnabled = document.getElementById('enableAlerts').checked;
+            document.getElementById(`step${currentStep}`).style.display = 'none';
+            
+            if (alertsEnabled) {
+                // If alerts are enabled, move to the email subscription step
+                currentStep++;
+                document.getElementById(`step${currentStep}`).style.display = 'block';
+            } else {
+                // If alerts are disabled, skip step 5 and go straight to submission
+                submitConfiguration();
+            }
+            updateNavigationButtons();
         } else {
             document.getElementById(`step${currentStep}`).style.display = 'none';
             currentStep++;
@@ -245,12 +310,16 @@ function handleResourceSelection(event, resource) {
         if (!selectedResources.find(r => r.Id === resource.Id)) {
             selectedResources.push(resource);
         }
-        keyInput.style.display = 'inline-block';
+        if (keyInput) {
+            keyInput.style.display = 'inline-block';
+        }
     } else {
         selectedResources = selectedResources.filter(r => r.Id !== resource.Id);
-        keyInput.style.display = 'none';
-        keyInput.value = "";
-        delete selectedKeys[resource.Id];
+        if (keyInput) {
+            keyInput.style.display = 'none';
+            keyInput.value = "";
+            delete selectedKeys[resource.Id];
+        }
     }
     updateNavigationButtons();
 }
@@ -262,6 +331,8 @@ function handleAlertsToggle(event) {
     if (event.target.checked) {
         updateThresholdsDisplay();
     }
+    
+    updateNavigationButtons();
 }
 
 function updateThresholdsDisplay() {
@@ -329,8 +400,19 @@ function prevStep() {
 
 function updateNavigationButtons() {
     document.getElementById('prevBtn').style.display = currentStep > 1 ? 'block' : 'none';
-    document.getElementById('nextBtn').style.display = currentStep < totalSteps ? 'block' : 'none';
-    document.getElementById('submitBtn').style.display = currentStep === totalSteps ? 'block' : 'none';
+    
+    // Show next button for steps 1-4
+    const isLastStep = currentStep === totalSteps;
+    const alertsEnabled = document.getElementById('enableAlerts')?.checked || false;
+    
+    // On step 4, if alerts are disabled, show "Deploy Monitoring" instead of "Next"
+    if (currentStep === 4 && !alertsEnabled) {
+        document.getElementById('nextBtn').style.display = 'none';
+        document.getElementById('submitBtn').style.display = 'block';
+    } else {
+        document.getElementById('nextBtn').style.display = !isLastStep ? 'block' : 'none';
+        document.getElementById('submitBtn').style.display = isLastStep ? 'block' : 'none';
+    }
 }
 
 function validateCurrentStep() {
@@ -341,6 +423,12 @@ function validateCurrentStep() {
             return selectedResources.length > 0;
         case 3:
             return selectedMetrics.length > 0;
+        case 4:
+            return true; // Alert configuration is optional
+        case 5:
+            // Require at least one subscriber email if alerts are enabled
+            const alertsEnabled = document.getElementById('enableAlerts').checked;
+            return !alertsEnabled || subscriberEmails.length > 0;
         default:
             return true;
     }
@@ -369,7 +457,8 @@ async function submitConfiguration() {
         metrics: selectedMetrics,
         alerts: document.getElementById('enableAlerts').checked,
         thresholds: {},
-        keys: {}
+        keys: {},
+        subscribers: subscriberEmails
     };
 
     if (config.alerts) {
@@ -429,17 +518,34 @@ function showError(message) {
 function showSuccess(result) {
     const modal = document.getElementById('resultModal');
     const content = document.getElementById('modalContent');
-    content.innerHTML = `
-        <div class="success-message">
-            <h3>Monitoring configuration completed successfully!</h3>
-            <p><strong>Dashboard Name:</strong> ${result.dashboardName}</p>
-            <p><strong>SNS Topic ARN:</strong> ${result.snsTopicArn}</p>
-            <p><strong>Important:</strong> Please add subscribers to the SNS topic "${result.topicName}" to receive alerts.</p>
-            <div class="dashboard-link">
-                <a href="${result.dashboardUrl}" target="_blank" class="btn">View Dashboard</a>
+    
+    const alertsEnabled = document.getElementById('enableAlerts')?.checked || false;
+    
+    if (alertsEnabled) {
+        content.innerHTML = `
+            <div class="success-message">
+                <h3>Monitoring configuration completed successfully!</h3>
+                <p><strong>Dashboard Name:</strong> ${result.dashboardName}</p>
+                <p><strong>SNS Topic ARN:</strong> ${result.snsTopicArn}</p>
+                <p><strong>Subscribers:</strong> ${subscriberEmails.length > 0 ? subscriberEmails.join(', ') : 'None'}</p>
+                <p><strong>Important:</strong> Please check your email to confirm the subscription. Additional subscribers can be added directly in the AWS SNS console.</p>
+                <div class="dashboard-link">
+                    <a href="${result.dashboardUrl}" target="_blank" class="btn">View Dashboard</a>
+                </div>
             </div>
-        </div>
-    `;
+        `;
+    } else {
+        content.innerHTML = `
+            <div class="success-message">
+                <h3>Monitoring configuration completed successfully!</h3>
+                <p><strong>Dashboard Name:</strong> ${result.dashboardName}</p>
+                <div class="dashboard-link">
+                    <a href="${result.dashboardUrl}" target="_blank" class="btn">View Dashboard</a>
+                </div>
+            </div>
+        `;
+    }
+    
     modal.style.display = 'block';
 }
 

@@ -53,13 +53,31 @@
             <!-- Thresholds will be populated dynamically -->
           </div>
         </div>
+      </div>
+
+      <!-- New Step 5: Email Subscription -->
+      <div class="step" id="step5" style="display: none;">
+        <h2>Step 5: Add Alert Subscribers</h2>
+        <div class="subscription-config">
+          <p>Please enter email addresses to receive CloudWatch alert notifications:</p>
+          <div class="form-group">
+            <label for="subscriberEmail">Email Address</label>
+            <input type="email" id="subscriberEmail" name="subscriberEmail" placeholder="Enter email address">
+            <button id="addEmailBtn" class="secondary-btn">Add Email</button>
+          </div>
+          <div class="subscriber-list">
+            <h3>Subscribers:</h3>
+            <ul id="subscribersList">
+              <!-- Subscribers will be added here -->
+            </ul>
+          </div>
+        </div>
         
         <!-- Progress Bar (initially hidden) -->
         <div id="progressContainer" style="display:none; margin-bottom:1rem; border:1px solid var(--border-color); border-radius:4px; background:#e9ecef;">
           <div id="progressBar" style="width:0%; height:20px; background-color:var(--primary-color); border-radius:4px;"></div>
         </div>
       </div>
-
 
       <!-- Navigation Buttons -->
       <div class="navigation-buttons">
